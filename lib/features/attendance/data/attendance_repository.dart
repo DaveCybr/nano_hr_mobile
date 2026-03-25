@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -108,7 +109,7 @@ class AttendanceRepository {
   Future<String> uploadAttendancePhoto({
     required String employeeId,
     required String type,
-    required List<int> imageBytes,
+    required Uint8List imageBytes,
   }) async {
     final today = DateTime.now().toIso8601String().split('T')[0];
     final fileName = 'attendance_${employeeId}_${today}_$type.jpg';

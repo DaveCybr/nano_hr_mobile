@@ -22,13 +22,12 @@ final recentAttendancesProvider = FutureProvider.family<List<AttendanceModel>, S
 );
 
 final todayScheduleProvider =
-    FutureProvider.family<Map<String, String?>, Map<String, dynamic>>(
-  (ref, params) async {
+    FutureProvider.family<Map<String, String?>, String>(
+  (ref, employeeId) async {
+    final employee = await ref.watch(currentEmployeeProvider.future);
+    if (employee == null) return {'work_in': null, 'work_out': null};
     final repo = ref.read(homeRepositoryProvider);
-    return repo.getTodaySchedule(
-      params['employee_id'] as String,
-      params['group'] as Map<String, dynamic>?,
-    );
+    return repo.getTodaySchedule(employeeId, employee.group);
   },
 );
 

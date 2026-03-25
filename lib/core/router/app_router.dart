@@ -4,6 +4,7 @@ import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/enroll_face_screen.dart';
 import '../../features/auth/presentation/forgot_password_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
+import '../../features/home/presentation/ringkasan_screen.dart';
 import '../../features/attendance/presentation/checkin_location_screen.dart';
 import '../../features/attendance/presentation/checkin_face_screen.dart';
 import '../../features/attendance/presentation/checkout_location_screen.dart';
@@ -48,8 +49,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/forgot-password', builder: (ctx, state) => const ForgotPasswordScreen()),
       GoRoute(path: '/enroll-face',     builder: (ctx, state) => const EnrollFaceScreen()),
       GoRoute(path: '/home',            builder: (ctx, state) => const HomeScreen()),
+      GoRoute(path: '/ringkasan',       builder: (ctx, state) => const RingkasanScreen()),
       GoRoute(path: '/checkin/location',   builder: (ctx, state) => const CheckinLocationScreen()),
-      GoRoute(path: '/checkin/face',       builder: (ctx, state) => const CheckinFaceScreen()),
+      GoRoute(
+        path: '/checkin/face',
+        builder: (ctx, state) => CheckinFaceScreen(
+          locationData:
+              (state.extra as Map<String, dynamic>?) ?? {},
+        ),
+      ),
       GoRoute(path: '/checkout/location',  builder: (ctx, state) => const CheckoutLocationScreen()),
       GoRoute(path: '/attendance/history', builder: (ctx, state) => const AttendanceHistoryScreen()),
       GoRoute(path: '/leave',          builder: (ctx, state) => const LeaveScreen()),

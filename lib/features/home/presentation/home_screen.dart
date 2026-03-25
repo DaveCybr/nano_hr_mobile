@@ -6,6 +6,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../providers/home_provider.dart';
 import '../../../shared/models/attendance_model.dart';
+import '../../../shared/models/employee_model.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -57,11 +58,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
           final todayAttendanceAsync =
               ref.watch(todayAttendanceProvider(employee.id));
-          final scheduleParams = {
-            'employee_id': employee.id,
-            'group': employee.group,
-          };
-          final scheduleAsync = ref.watch(todayScheduleProvider(scheduleParams));
+          final scheduleAsync = ref.watch(todayScheduleProvider(employee.id));
           final summaryAsync = ref.watch(monthlySummaryProvider(employee.id));
           final recentAsync =
               ref.watch(recentAttendancesProvider(employee.id));
@@ -72,7 +69,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onRefresh: () async {
               ref.invalidate(currentEmployeeProvider);
               ref.invalidate(todayAttendanceProvider(employee.id));
-              ref.invalidate(todayScheduleProvider(scheduleParams));
+              ref.invalidate(todayScheduleProvider(employee.id));
               ref.invalidate(monthlySummaryProvider(employee.id));
               ref.invalidate(recentAttendancesProvider(employee.id));
             },
@@ -106,8 +103,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   color: AppColors.primary))),
                       error: (_, __) => const SizedBox(),
                       data: (attendance) => _buildAttendanceCards(
-                          context, employee.id, attendance,
-                          scheduleAsync.valueOrNull),
+                          context, employee, attendance),
                     ),
                   ),
                 ),
@@ -147,8 +143,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Ringkasan Bulan Ini',
-                            style: AppTextStyles.heading3),
+                        GestureDetector(
+                          onTap: () => context.push('/ringkasan'),
+                          child: const Row(children: [
+                            Text('Ringkasan Bulan Ini',
+                                style: AppTextStyles.heading3),
+                            SizedBox(width: 6),
+                            Icon(Icons.chevron_right_rounded,
+                                color: AppColors.primary, size: 18),
+                          ]),
+                        ),
                         const SizedBox(height: 12),
                         summaryAsync.when(
                           loading: () => const Center(
@@ -326,200 +330,173 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildAttendanceCards(BuildContext context, String employeeId,
-      AttendanceModel? attendance, Map<String, String?>? schedule) {
+  Widget _buildAttendanceCards(BuildContext context, EmployeeModel employee,
+      AttendanceModel? attendance) {
     final hasCheckedIn = attendance?.hasCheckedIn ?? false;
     final hasCheckedOut = attendance?.hasCheckedOut ?? false;
 
-    String? timeInStr;
-    String? timeOutStr;
+    String timeIn = '--:--:--';
+    String timeOut = '--:--:--';
     if (hasCheckedIn && attendance?.timeIn != null) {
-      final dt = DateTime.parse(attendance!.timeIn!).toLocal();
-      timeInStr = DateFormat('HH:mm').format(dt);
+      timeIn = DateFormat('HH:mm:ss')
+          .format(DateTime.parse(attendance!.timeIn!).toLocal());
     }
     if (hasCheckedOut && attendance?.timeOut != null) {
-      final dt = DateTime.parse(attendance!.timeOut!).toLocal();
-      timeOutStr = DateFormat('HH:mm').format(dt);
+      timeOut = DateFormat('HH:mm:ss')
+          .format(DateTime.parse(attendance!.timeOut!).toLocal());
     }
 
     return Row(
       children: [
-        // Check-in card
+        // ── Check-in card ────────────────────────────────
         Expanded(
           child: GestureDetector(
-            onTap: hasCheckedIn
-                ? null
-                : () => context.push('/checkin/location'),
+            onTap: hasCheckedIn ? null : () => context.push('/checkin/location'),
             child: Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
               decoration: BoxDecoration(
-                color: hasCheckedIn
-                    ? AppColors.success.withValues(alpha: 0.15)
-                    : AppColors.bgCard,
+                color: AppColors.bgCard,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: hasCheckedIn
-                      ? AppColors.success.withValues(alpha: 0.5)
+                      ? AppColors.primary.withValues(alpha: 0.4)
                       : AppColors.border,
                 ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+              child: Row(children: [
+                // Avatar circle
+                Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.bgCardLight,
+                    image: hasCheckedIn && employee.facePhotoUrl != null
+                        ? DecorationImage(
+                            image: NetworkImage(employee.facePhotoUrl!),
+                            fit: BoxFit.cover)
+                        : null,
+                  ),
+                  child: hasCheckedIn
+                      ? null
+                      : const Icon(Icons.login_rounded,
+                          color: AppColors.primary, size: 20),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        hasCheckedIn
-                            ? Icons.check_circle
-                            : Icons.login,
-                        color: hasCheckedIn
-                            ? AppColors.success
-                            : AppColors.primary,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
                       const Text('CHECK IN',
                           style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600)),
+                              color: AppColors.textMuted,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5)),
+                      const SizedBox(height: 4),
+                      Row(children: [
+                        Text(timeIn,
+                            style: TextStyle(
+                                color: hasCheckedIn
+                                    ? AppColors.primary
+                                    : AppColors.textMuted,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold)),
+                        const SizedBox(width: 3),
+                        const Text('WIB',
+                            style: TextStyle(
+                                color: AppColors.textMuted, fontSize: 9)),
+                        const SizedBox(width: 4),
+                        Icon(
+                          hasCheckedIn
+                              ? Icons.check_circle_rounded
+                              : Icons.cancel_rounded,
+                          color: hasCheckedIn
+                              ? AppColors.success
+                              : AppColors.textMuted,
+                          size: 13,
+                        ),
+                      ]),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  if (hasCheckedIn)
-                    Text(timeInStr ?? '--:--',
-                        style: const TextStyle(
-                            color: AppColors.success,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold))
-                  else
-                    const Text('Belum',
-                        style: TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500)),
-                  if (attendance?.statusIn != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: _buildStatusBadge(attendance!.statusIn!),
-                    ),
-                ],
-              ),
+                ),
+              ]),
             ),
           ),
         ),
-        const SizedBox(width: 12),
-        // Check-out card
+        const SizedBox(width: 10),
+        // ── Check-out card ───────────────────────────────
         Expanded(
           child: GestureDetector(
             onTap: (hasCheckedIn && !hasCheckedOut)
                 ? () => context.push('/checkout/location')
                 : null,
             child: Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
               decoration: BoxDecoration(
-                color: hasCheckedOut
-                    ? AppColors.orange.withValues(alpha: 0.15)
-                    : (hasCheckedIn && !hasCheckedOut)
-                        ? AppColors.bgCardLight
-                        : AppColors.bgCard,
+                color: AppColors.bgCard,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: hasCheckedOut
-                      ? AppColors.orange.withValues(alpha: 0.5)
-                      : (hasCheckedIn && !hasCheckedOut)
-                          ? AppColors.orange.withValues(alpha: 0.3)
-                          : AppColors.border,
+                      ? AppColors.orange.withValues(alpha: 0.4)
+                      : AppColors.border,
                 ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+              child: Row(children: [
+                Container(
+                  width: 36, height: 36,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.bgCardLight,
+                  ),
+                  child: Icon(Icons.logout_rounded,
+                      color: (hasCheckedIn && !hasCheckedOut)
+                          ? AppColors.orange
+                          : AppColors.textMuted,
+                      size: 20),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        hasCheckedOut
-                            ? Icons.check_circle
-                            : Icons.logout,
-                        color: hasCheckedOut
-                            ? AppColors.orange
-                            : (hasCheckedIn && !hasCheckedOut)
-                                ? AppColors.orange
-                                : AppColors.textMuted,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
                       const Text('CHECK OUT',
                           style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600)),
+                              color: AppColors.textMuted,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5)),
+                      const SizedBox(height: 4),
+                      Row(children: [
+                        Text(timeOut,
+                            style: TextStyle(
+                                color: hasCheckedOut
+                                    ? AppColors.orange
+                                    : AppColors.textMuted,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold)),
+                        const SizedBox(width: 3),
+                        const Text('WIB',
+                            style: TextStyle(
+                                color: AppColors.textMuted, fontSize: 9)),
+                        const SizedBox(width: 4),
+                        Icon(
+                          hasCheckedOut
+                              ? Icons.check_circle_rounded
+                              : Icons.cancel_rounded,
+                          color: hasCheckedOut
+                              ? AppColors.success
+                              : AppColors.textMuted,
+                          size: 13,
+                        ),
+                      ]),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  if (hasCheckedOut)
-                    Text(timeOutStr ?? '--:--',
-                        style: const TextStyle(
-                            color: AppColors.orange,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold))
-                  else
-                    Text(
-                      hasCheckedIn ? 'Tap untuk out' : 'Belum',
-                      style: TextStyle(
-                          color: hasCheckedIn
-                              ? AppColors.orange
-                              : AppColors.textMuted,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500),
-                    ),
-                  if (attendance?.statusOut != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: _buildStatusBadge(attendance!.statusOut!),
-                    ),
-                ],
-              ),
+                ),
+              ]),
             ),
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildStatusBadge(String status) {
-    Color color;
-    String label;
-    switch (status) {
-      case 'on_time':
-        color = AppColors.success;
-        label = 'Tepat Waktu';
-        break;
-      case 'in_tolerance':
-        color = AppColors.warning;
-        label = 'Toleransi';
-        break;
-      case 'late':
-        color = AppColors.danger;
-        label = 'Terlambat';
-        break;
-      case 'early_check_out':
-        color = AppColors.warning;
-        label = 'Lebih Awal';
-        break;
-      default:
-        color = AppColors.textMuted;
-        label = status;
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(label,
-          style: TextStyle(
-              color: color, fontSize: 10, fontWeight: FontWeight.w600)),
     );
   }
 
