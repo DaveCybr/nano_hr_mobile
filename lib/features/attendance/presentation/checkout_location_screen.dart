@@ -7,9 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/constants/app_text_styles.dart';
 import '../../../shared/models/zone_model.dart';
-import '../../../shared/widgets/app_button.dart';
 import '../../home/providers/home_provider.dart';
 import '../providers/attendance_provider.dart';
 import '../data/attendance_repository.dart';
@@ -30,9 +28,10 @@ class _CheckoutLocationScreenState
   List<ZoneModel> _zones = [];
   bool _loading = true;
   bool _refreshing = false;
-  bool _submitting = false;
+  bool _processing = false;
   String? _error;
   String _userAddress = 'Mendapatkan alamat...';
+  String? _employeeId;
   final _mapController = MapController();
 
   @override
@@ -42,10 +41,7 @@ class _CheckoutLocationScreenState
   }
 
   Future<void> _getLocation() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() { _loading = true; _error = null; });
     try {
       final repo = AttendanceRepository();
       final position = await repo.getCurrentPosition();
@@ -62,10 +58,7 @@ class _CheckoutLocationScreenState
       ZoneModel? nearest;
       for (final z in zones) {
         final d = repo.distanceToZone(position.latitude, position.longitude, z);
-        if (d < minDist) {
-          minDist = d;
-          nearest = z;
-        }
+        if (d < minDist) { minDist = d; nearest = z; }
       }
 
       setState(() {
@@ -78,16 +71,11 @@ class _CheckoutLocationScreenState
       });
 
       _geocodeUserLocation(position.latitude, position.longitude);
-
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _mapController.move(
-            LatLng(position.latitude, position.longitude), 16);
+        _mapController.move(LatLng(position.latitude, position.longitude), 16);
       });
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
+      setState(() { _error = e.toString(); _loading = false; });
     }
   }
 
@@ -98,8 +86,7 @@ class _CheckoutLocationScreenState
         final p = placemarks.first;
         final parts = <String>[
           if (p.street != null && p.street!.isNotEmpty) p.street!,
-          if (p.subLocality != null && p.subLocality!.isNotEmpty)
-            p.subLocality!,
+          if (p.subLocality != null && p.subLocality!.isNotEmpty) p.subLocality!,
           if (p.locality != null && p.locality!.isNotEmpty) p.locality!,
         ];
         setState(() =>
@@ -114,227 +101,319 @@ class _CheckoutLocationScreenState
   }
 
   Future<void> _doCheckout() async {
-    if (_currentPosition == null || _nearestZone == null || _submitting) return;
+    if (_currentPosition == null || _nearestZone == null || _processing) return;
+    setState(() => _processing = true);
 
-    final employee = await ref.read(currentEmployeeProvider.future);
-    if (employee == null) return;
-
-    final repo = AttendanceRepository();
-    final schedule = await ref
-        .read(homeRepositoryProvider)
-        .getTodaySchedule(employee.id, employee.group);
-    final statusOut =
-        repo.determineCheckOutStatus(scheduleOut: schedule['work_out']);
-
-    String? reason;
-    if (statusOut == 'early_check_out' && mounted) {
-      reason = await _showEarlyCheckoutModal(schedule['work_out']);
-      if (reason == null) return; // user cancelled
-    }
-
-    final attendanceData =
-        await ref.read(homeRepositoryProvider).getTodayAttendance(employee.id);
-    if (attendanceData == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Belum ada data check in hari ini'),
-            backgroundColor: AppColors.danger));
-      }
-      return;
-    }
-
-    setState(() => _submitting = true);
     try {
+      final repo = AttendanceRepository();
+      final employee = await ref.read(currentEmployeeProvider.future);
+      if (employee == null) throw Exception('Data karyawan tidak ditemukan');
+
+      final attendance = await ref
+          .read(homeRepositoryProvider)
+          .getTodayAttendance(employee.id);
+      if (attendance == null) throw Exception('Data absensi hari ini tidak ditemukan');
+      if (attendance.id.isEmpty) throw Exception('ID absensi tidak valid — coba refresh halaman');
+
+      final schedule = await ref
+          .read(homeRepositoryProvider)
+          .getTodaySchedule(employee.id, employee.group);
+
+      final statusOut = repo.determineCheckOutStatus(
+          scheduleOut: schedule['work_out']);
+
+      String? reason;
+      if (statusOut == 'early_check_out' && mounted) {
+        reason = await _showEarlyCheckoutModal(DateTime.now());
+        if (reason == null) {
+          setState(() => _processing = false);
+          return;
+        }
+      }
+
       await repo.checkOut(
-        attendanceId: attendanceData.id,
+        attendanceId: attendance.id,
+        employeeId: employee.id,
         zoneId: _nearestZone!.id,
         lat: _currentPosition!.latitude,
         lng: _currentPosition!.longitude,
         locationStatus: _locationStatus ?? 'out_of_area',
         statusOut: statusOut,
         faceVerified: false,
-        faceConfidence: 0,
+        faceConfidence: 0.0,
         reasonOut: reason,
+        timeIn: attendance.timeIn,
       );
 
-      ref.invalidate(currentEmployeeProvider);
-      ref.invalidate(todayAttendanceProvider(employee.id));
-
+      _employeeId = employee.id;
       if (mounted) _showSuccessModal(statusOut);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Check out gagal: $e'),
-            backgroundColor: AppColors.danger));
+        setState(() => _processing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal checkout: $e'),
+            backgroundColor: AppColors.danger,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
       }
-    } finally {
-      if (mounted) setState(() => _submitting = false);
     }
   }
 
-  Future<String?> _showEarlyCheckoutModal(String? scheduleOut) async {
-    final timeLabel =
-        scheduleOut != null ? scheduleOut.substring(0, 5) : '--:--';
+  // ── Early checkout modal ──────────────────────────────────────────────────
+
+  Future<String?> _showEarlyCheckoutModal(DateTime checkOutTime) async {
     final dateLabel =
-        DateFormat('d MMM yyyy', 'id_ID').format(DateTime.now());
-    final controller = TextEditingController();
+        DateFormat('d MMM yyyy, HH:mm', 'id_ID').format(checkOutTime);
+    String selectedCategory = 'Lainnya';
+    final noteController = TextEditingController();
+    int noteLength = 0;
 
     return showDialog<String>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.bgCard,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        contentPadding: EdgeInsets.zero,
-        content: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            // Illustration
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Stack(alignment: Alignment.center, children: [
-                Container(
-                  width: 80, height: 80,
-                  decoration: BoxDecoration(
-                    color: AppColors.bgCardLight,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Icon(Icons.alarm_rounded,
-                      color: AppColors.warning, size: 48),
-                ),
-                Positioned(
-                  right: 100,
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: AppColors.orange,
-                      borderRadius: BorderRadius.circular(8),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Dialog(
+          backgroundColor: AppColors.surfaceContainerLowest,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Container(
+                    width: 40, height: 40,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.errorContainer,
                     ),
-                    child: const Icon(Icons.logout_rounded,
-                        color: Colors.white, size: 18),
+                    child: const Icon(Icons.schedule_rounded,
+                        color: AppColors.danger, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text('Checkout Lebih Awal',
+                      style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.onSurface)),
+                ]),
+                const SizedBox(height: 16),
+
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.errorContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.access_time_rounded,
+                          color: AppColors.danger, size: 16),
+                      const SizedBox(width: 8),
+                      Text(dateLabel,
+                          style: const TextStyle(
+                              color: AppColors.danger,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600)),
+                    ],
                   ),
                 ),
-              ]),
-            ),
+                const SizedBox(height: 16),
 
-            // Content
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-              child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(children: [
-                      Icon(Icons.error_rounded,
-                          color: AppColors.danger, size: 20),
-                      SizedBox(width: 8),
-                      Text('Keluar Lebih Awal',
-                          style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold)),
-                    ]),
-                    const SizedBox(height: 12),
-                    // Schedule box
-                    Container(
-                      width: double.infinity,
+                const Text('Alasan checkout lebih awal:',
+                    style: TextStyle(
+                        fontSize: 13, color: AppColors.textSecondary)),
+                const SizedBox(height: 8),
+
+                for (final opt in ['Izin', 'Sakit', 'Lainnya'])
+                  GestureDetector(
+                    onTap: () => setModalState(() => selectedCategory = opt),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 6),
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 10),
                       decoration: BoxDecoration(
-                        color: AppColors.danger.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(10),
+                        color: selectedCategory == opt
+                            ? AppColors.primary.withValues(alpha: 0.08)
+                            : AppColors.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: selectedCategory == opt
+                              ? AppColors.primary.withValues(alpha: 0.4)
+                              : Colors.transparent,
+                        ),
                       ),
-                      child: Column(children: [
-                        const Text('Jadwal Check Out:',
+                      child: Row(children: [
+                        Icon(
+                          selectedCategory == opt
+                              ? Icons.radio_button_checked_rounded
+                              : Icons.radio_button_off_rounded,
+                          color: selectedCategory == opt
+                              ? AppColors.primary
+                              : AppColors.textMuted,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(opt,
                             style: TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 2),
-                        Text('$dateLabel, $timeLabel',
-                            style: const TextStyle(
-                                color: AppColors.danger,
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold)),
+                                fontSize: 14,
+                                color: selectedCategory == opt
+                                    ? AppColors.primary
+                                    : AppColors.onSurface,
+                                fontWeight: selectedCategory == opt
+                                    ? FontWeight.w600
+                                    : FontWeight.normal)),
                       ]),
                     ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Anda Check Out sebelum jam kerja selesai.\nMohon isi alasan Anda dibawah.',
-                      style: AppTextStyles.bodySecondary,
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: controller,
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                          hintText: 'Alasan keluar lebih awal'),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.pop(ctx, null),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.textSecondary,
-                            side: const BorderSide(color: AppColors.border),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                            minimumSize: const Size(0, 48),
-                          ),
-                          child: const Text('Batal'),
-                        ),
+                  ),
+
+                const SizedBox(height: 8),
+
+                TextField(
+                  controller: noteController,
+                  maxLength: 50,
+                  maxLines: 2,
+                  onChanged: (v) => setModalState(() => noteLength = v.length),
+                  style: const TextStyle(color: AppColors.onSurface, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Beri catatan (opsional)',
+                    counterText: '$noteLength/50',
+                    counterStyle: const TextStyle(
+                        color: AppColors.textMuted, fontSize: 11),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [AppColors.primary, AppColors.primaryContainer],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () =>
-                              Navigator.pop(ctx, controller.text.trim()),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.danger,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                            minimumSize: const Size(0, 48),
-                          ),
-                          child: const Text('Check Out'),
-                        ),
+                      borderRadius: BorderRadius.circular(100),
+                    ),
+                    child: ElevatedButton(
+                      onPressed: () {
+                        final reason = selectedCategory == 'Lainnya'
+                            ? noteController.text.trim()
+                            : '$selectedCategory: ${noteController.text.trim()}';
+                        Navigator.pop(ctx, reason);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        shape: const StadiumBorder(),
                       ),
-                    ]),
-                  ]),
+                      child: const Text('Lanjutkan',
+                          style: TextStyle(
+                              color: AppColors.onPrimary,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ]),
+          ),
         ),
       ),
     );
   }
 
+  // ── Success modal ─────────────────────────────────────────────────────────
+
   void _showSuccessModal(String statusOut) {
     final msg = statusOut == 'early_check_out'
-        ? 'Check out berhasil dengan status Keluar Lebih Awal.'
+        ? 'Check out berhasil lebih awal.'
         : 'Check out berhasil tepat waktu!';
+
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.bgCard,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(children: [
-          Icon(Icons.check_circle_rounded, color: AppColors.success),
-          SizedBox(width: 8),
-          Text('Check Out Berhasil',
-              style: TextStyle(color: AppColors.textPrimary)),
-        ]),
-        content: Text(msg, style: AppTextStyles.bodySecondary),
-        actions: [
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              context.go('/home');
-            },
-            child: const Text('Kembali ke Beranda'),
+      builder: (ctx) => Dialog(
+        backgroundColor: AppColors.surfaceContainerLowest,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 80),
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72, height: 72,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0xFFDCFCE7),
+                ),
+                child: const Icon(Icons.check_rounded,
+                    color: Color(0xFF166534), size: 40),
+              ),
+              const SizedBox(height: 20),
+              const Text('Check Out Berhasil',
+                  style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.onSurface)),
+              const SizedBox(height: 8),
+              Text(msg,
+                  style: const TextStyle(
+                      fontSize: 14, color: AppColors.textSecondary),
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 28),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [AppColors.primary, AppColors.primaryContainer],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(100),
+                  ),
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      final empId = _employeeId;
+                      if (empId != null) {
+                        ref.invalidate(todayAttendanceProvider(empId));
+                        ref.invalidate(monthlySummaryProvider(empId));
+                        ref.invalidate(recentAttendancesProvider(empId));
+                      }
+                      ref.invalidate(currentEmployeeProvider);
+                      context.go('/home');
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      shape: const StadiumBorder(),
+                    ),
+                    child: const Text('Kembali ke Beranda',
+                        style: TextStyle(
+                            color: AppColors.onPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -348,23 +427,34 @@ class _CheckoutLocationScreenState
             : const LatLng(-8.2006, 113.6793);
 
     return Scaffold(
-      backgroundColor: AppColors.bgPrimary,
+      backgroundColor: AppColors.surface,
       appBar: AppBar(
-        backgroundColor: AppColors.bgPrimary,
-        title: const Text('Check Out Lokasi'),
+        backgroundColor: AppColors.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        titleSpacing: 0,
+        title: const Text(
+          'Check Out',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.onSurface,
+          ),
+        ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: AppColors.onSurface, size: 20),
           onPressed: () => context.pop(),
         ),
         actions: [
           IconButton(
             icon: _refreshing
                 ? const SizedBox(
-                    width: 18,
-                    height: 18,
+                    width: 18, height: 18,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: AppColors.primary))
-                : const Icon(Icons.refresh_rounded, color: AppColors.primary),
+                : const Icon(Icons.refresh_rounded,
+                    color: AppColors.primary, size: 22),
             onPressed: _refreshing
                 ? null
                 : () async {
@@ -375,28 +465,28 @@ class _CheckoutLocationScreenState
           ),
           IconButton(
             icon: const Icon(Icons.my_location_rounded,
-                color: AppColors.primary),
+                color: AppColors.primary, size: 22),
             onPressed: () {
               if (_currentPosition != null) {
                 _mapController.move(
                     LatLng(_currentPosition!.latitude,
-                        _currentPosition!.longitude),
-                    16);
+                        _currentPosition!.longitude), 16);
               }
             },
           ),
+          const SizedBox(width: 4),
         ],
       ),
       body: Column(
         children: [
+          // ── Map ─────────────────────────────────────────────────────────
           Expanded(
             child: FlutterMap(
               mapController: _mapController,
               options: MapOptions(initialCenter: mapCenter, initialZoom: 16),
               children: [
                 TileLayer(
-                  urlTemplate:
-                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'com.nano.hr_mobile',
                 ),
                 CircleLayer(
@@ -404,9 +494,8 @@ class _CheckoutLocationScreenState
                       .map((z) => CircleMarker(
                             point: LatLng(z.latitude, z.longitude),
                             radius: z.radiusMeters.toDouble(),
-                            color: AppColors.primary.withValues(alpha: 0.15),
-                            borderColor:
-                                AppColors.primary.withValues(alpha: 0.7),
+                            color: AppColors.primary.withValues(alpha: 0.1),
+                            borderColor: AppColors.primary.withValues(alpha: 0.6),
                             borderStrokeWidth: 2,
                             useRadiusInMeter: true,
                           ))
@@ -416,13 +505,19 @@ class _CheckoutLocationScreenState
                   markers: _zones
                       .map((z) => Marker(
                             point: LatLng(z.latitude, z.longitude),
-                            width: 40, height: 40,
+                            width: 44, height: 44,
                             child: Container(
                               decoration: BoxDecoration(
-                                color: AppColors.bgCard,
+                                color: AppColors.surfaceContainerLowest,
                                 shape: BoxShape.circle,
-                                border: Border.all(
-                                    color: AppColors.primary, width: 2),
+                                border: Border.all(color: AppColors.primary, width: 2),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x14006036),
+                                    blurRadius: 12,
+                                    offset: Offset(0, 4),
+                                  ),
+                                ],
                               ),
                               child: const Icon(Icons.business_rounded,
                                   color: AppColors.primary, size: 20),
@@ -435,12 +530,19 @@ class _CheckoutLocationScreenState
                     Marker(
                       point: LatLng(_currentPosition!.latitude,
                           _currentPosition!.longitude),
-                      width: 16, height: 16,
+                      width: 20, height: 20,
                       child: Container(
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: AppColors.success,
-                          border: Border.all(color: Colors.white, width: 2),
+                          color: AppColors.primary,
+                          border: Border.all(color: Colors.white, width: 3),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x30006036),
+                              blurRadius: 10,
+                              spreadRadius: 2,
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -449,12 +551,20 @@ class _CheckoutLocationScreenState
             ),
           ),
 
-          // Bottom panel
+          // ── Bottom panel ────────────────────────────────────────────────
           Container(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+            padding: EdgeInsets.fromLTRB(
+                20, 0, 20, 36 + MediaQuery.of(context).padding.bottom),
             decoration: const BoxDecoration(
-              color: AppColors.bgCard,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              color: AppColors.surfaceContainerLowest,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0x0A000000),
+                  blurRadius: 24,
+                  offset: Offset(0, -4),
+                ),
+              ],
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -462,107 +572,226 @@ class _CheckoutLocationScreenState
               children: [
                 Center(
                   child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 10),
+                    margin: const EdgeInsets.symmetric(vertical: 12),
                     width: 40, height: 4,
                     decoration: BoxDecoration(
-                      color: AppColors.border,
+                      color: AppColors.surfaceContainerHigh,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
                 ),
+
                 if (_loading)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 32),
                     child: Center(
                         child: CircularProgressIndicator(
-                            color: AppColors.primary)),
+                            color: AppColors.primary, strokeWidth: 2)),
                   )
                 else if (_error != null)
                   Column(mainAxisSize: MainAxisSize.min, children: [
-                    Text(_error!,
-                        style: const TextStyle(color: AppColors.danger),
-                        textAlign: TextAlign.center),
-                    const SizedBox(height: 12),
-                    AppButton(
-                        label: 'Coba Lagi',
-                        onPressed: _getLocation,
-                        icon: Icons.refresh_rounded),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppColors.errorContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(children: [
+                        Icon(Icons.info_outline_rounded,
+                            color: AppColors.danger, size: 18),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Mohon maaf, terjadi kendala mendapatkan lokasi.',
+                            style: TextStyle(color: AppColors.danger, fontSize: 13),
+                          ),
+                        ),
+                      ]),
+                    ),
+                    const SizedBox(height: 16),
+                    _GradientButton(
+                      label: 'Coba Lagi',
+                      icon: Icons.refresh_rounded,
+                      onPressed: _getLocation,
+                    ),
                   ])
                 else ...[
                   if (_nearestZone != null) ...[
-                    const Text('Lokasi Kantor',
-                        style: TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 10),
                     Row(children: [
-                      const Icon(Icons.business_rounded,
-                          color: AppColors.primary, size: 18),
-                      const SizedBox(width: 10),
+                      Container(
+                        width: 36, height: 36,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFFE8F5EE),
+                        ),
+                        child: const Icon(Icons.business_rounded,
+                            color: AppColors.primary, size: 18),
+                      ),
+                      const SizedBox(width: 12),
                       Expanded(
-                          child: Text(_nearestZone!.officeName,
-                              style: AppTextStyles.body)),
-                    ]),
-                    if (_nearestZone!.officeAddress != null) ...[
-                      const SizedBox(height: 6),
-                      Row(
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Icon(Icons.place_rounded,
-                                color: AppColors.textMuted, size: 16),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(_nearestZone!.officeAddress!,
-                                  style: AppTextStyles.bodySecondary,
-                                  maxLines: 2,
+                            const Text('Lokasi Kantor',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.textMuted,
+                                    letterSpacing: 0.5)),
+                            const SizedBox(height: 2),
+                            Text(_nearestZone!.officeName,
+                                style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.onSurface)),
+                            if (_nearestZone!.officeAddress != null)
+                              Text(_nearestZone!.officeAddress!,
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textSecondary),
+                                  maxLines: 1,
                                   overflow: TextOverflow.ellipsis),
-                            ),
-                          ]),
-                    ],
-                    const SizedBox(height: 14),
-                    const Divider(color: AppColors.border, height: 1),
-                    const SizedBox(height: 14),
-                  ],
-                  const Text('Lokasi Kamu saat ini',
-                      style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: AppColors.bgCardLight,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Row(children: [
-                      const Icon(Icons.location_on_rounded,
-                          color: AppColors.success, size: 18),
-                      const SizedBox(width: 10),
-                      Expanded(
-                          child: Text(_userAddress,
-                              style: AppTextStyles.bodySecondary)),
+                          ],
+                        ),
+                      ),
                     ]),
-                  ),
-                  const SizedBox(height: 16),
-                  AppButton(
-                    label: 'Check Out',
+                    const SizedBox(height: 16),
+                  ],
+
+                  Row(children: [
+                    Container(
+                      width: 36, height: 36,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFFE8F5EE),
+                      ),
+                      child: const Icon(Icons.location_on_rounded,
+                          color: AppColors.primary, size: 18),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Lokasi Kamu',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppColors.textMuted,
+                                  letterSpacing: 0.5)),
+                          const SizedBox(height: 2),
+                          Text(_userAddress,
+                              style: const TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.textSecondary),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis),
+                        ],
+                      ),
+                    ),
+                    if (_locationStatus != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: _locationStatus == 'in_area'
+                              ? const Color(0xFFDCFCE7)
+                              : AppColors.errorContainer,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          _locationStatus == 'in_area'
+                              ? 'Dalam Area'
+                              : 'Di Luar Area',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: _locationStatus == 'in_area'
+                                ? const Color(0xFF166534)
+                                : AppColors.danger,
+                          ),
+                        ),
+                      ),
+                  ]),
+
+                  const SizedBox(height: 20),
+
+                  _GradientButton(
+                    label: _processing ? 'Memproses...' : 'Check Out Disini',
+                    icon: _processing
+                        ? Icons.hourglass_top_rounded
+                        : Icons.directions_run_rounded,
                     onPressed: _currentPosition != null &&
                             _nearestZone != null &&
-                            !_submitting
+                            !_processing
                         ? _doCheckout
                         : null,
-                    loading: _submitting,
-                    icon: Icons.logout_rounded,
                   ),
                 ],
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _GradientButton extends StatelessWidget {
+  final String label;
+  final IconData? icon;
+  final VoidCallback? onPressed;
+
+  const _GradientButton({required this.label, this.icon, this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = onPressed == null;
+    return SizedBox(
+      width: double.infinity,
+      height: 54,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: disabled
+              ? null
+              : const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.primary, AppColors.primaryContainer],
+                ),
+          color: disabled ? AppColors.surfaceContainerLow : null,
+          borderRadius: BorderRadius.circular(100),
+          boxShadow: disabled
+              ? null
+              : const [
+                  BoxShadow(
+                    color: Color(0x14006036),
+                    blurRadius: 24,
+                    offset: Offset(0, 8),
+                  ),
+                ],
+        ),
+        child: ElevatedButton.icon(
+          onPressed: onPressed,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            shape: const StadiumBorder(),
+          ),
+          icon: Icon(
+            icon ?? Icons.arrow_forward_rounded,
+            color: disabled ? AppColors.textMuted : AppColors.onPrimary,
+            size: 20,
+          ),
+          label: Text(
+            label,
+            style: TextStyle(
+              color: disabled ? AppColors.textMuted : AppColors.onPrimary,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
       ),
     );
   }

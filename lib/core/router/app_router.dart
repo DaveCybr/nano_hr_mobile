@@ -15,6 +15,7 @@ import '../../features/schedule/presentation/schedule_screen.dart';
 import '../../features/notification/presentation/notification_screen.dart';
 import '../../features/account/presentation/account_screen.dart';
 import '../supabase/supabase_client.dart';
+import '../shell/main_shell.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -24,47 +25,65 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final isLoggedIn = session != null;
       final loc = state.matchedLocation;
 
-      // Belum login → ke login
       if (!isLoggedIn) {
         if (loc == '/login' || loc == '/forgot-password') return null;
         return '/login';
       }
 
-      // Sudah login, cek face_token
-      if (loc == '/login') {
+      if (loc == '/enroll-face') return null;
+
+      if (loc == '/login' || loc == '/home') {
         final emp = await supabase
             .from('employees')
             .select('face_token')
             .eq('auth_user_id', session.user.id)
             .maybeSingle();
-
         final hasFace = emp != null && emp['face_token'] != null;
-        return hasFace ? '/home' : '/enroll-face';
+        if (!hasFace) return '/enroll-face';
+        if (loc == '/login') return '/home';
       }
 
       return null;
     },
     routes: [
-      GoRoute(path: '/login',           builder: (ctx, state) => const LoginScreen()),
-      GoRoute(path: '/forgot-password', builder: (ctx, state) => const ForgotPasswordScreen()),
-      GoRoute(path: '/enroll-face',     builder: (ctx, state) => const EnrollFaceScreen()),
-      GoRoute(path: '/home',            builder: (ctx, state) => const HomeScreen()),
-      GoRoute(path: '/ringkasan',       builder: (ctx, state) => const RingkasanScreen()),
-      GoRoute(path: '/checkin/location',   builder: (ctx, state) => const CheckinLocationScreen()),
+      // ── Auth (no shell) ─────────────────────────────────────────────
+      GoRoute(path: '/login',           builder: (ctx, s) => const LoginScreen()),
+      GoRoute(path: '/forgot-password', builder: (ctx, s) => const ForgotPasswordScreen()),
+      GoRoute(path: '/enroll-face',     builder: (ctx, s) => const EnrollFaceScreen()),
+
+      // ── Flow routes (no shell) ──────────────────────────────────────
+      GoRoute(path: '/ringkasan',        builder: (ctx, s) => const RingkasanScreen()),
+      GoRoute(path: '/checkin/location', builder: (ctx, s) => const CheckinLocationScreen()),
       GoRoute(
         path: '/checkin/face',
-        builder: (ctx, state) => CheckinFaceScreen(
-          locationData:
-              (state.extra as Map<String, dynamic>?) ?? {},
+        builder: (ctx, s) => CheckinFaceScreen(
+          locationData: (s.extra as Map<String, dynamic>?) ?? {},
         ),
       ),
-      GoRoute(path: '/checkout/location',  builder: (ctx, state) => const CheckoutLocationScreen()),
-      GoRoute(path: '/attendance/history', builder: (ctx, state) => const AttendanceHistoryScreen()),
-      GoRoute(path: '/leave',          builder: (ctx, state) => const LeaveScreen()),
-      GoRoute(path: '/overtime',       builder: (ctx, state) => const OvertimeScreen()),
-      GoRoute(path: '/schedule',       builder: (ctx, state) => const ScheduleScreen()),
-      GoRoute(path: '/notifications',  builder: (ctx, state) => const NotificationScreen()),
-      GoRoute(path: '/account',        builder: (ctx, state) => const AccountScreen()),
+      GoRoute(path: '/checkout/location',  builder: (ctx, s) => const CheckoutLocationScreen()),
+      GoRoute(path: '/attendance/history', builder: (ctx, s) => const AttendanceHistoryScreen()),
+      GoRoute(path: '/leave',    builder: (ctx, s) => const LeaveScreen()),
+      GoRoute(path: '/overtime', builder: (ctx, s) => const OvertimeScreen()),
+
+      // ── Main tabs (persistent shell) ────────────────────────────────
+      StatefulShellRoute.indexedStack(
+        builder: (ctx, state, navigationShell) =>
+            MainShell(navigationShell: navigationShell),
+        branches: [
+          StatefulShellBranch(routes: [
+            GoRoute(path: '/home', builder: (ctx, s) => const HomeScreen()),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(path: '/notifications', builder: (ctx, s) => const NotificationScreen()),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(path: '/schedule', builder: (ctx, s) => const ScheduleScreen()),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(path: '/account', builder: (ctx, s) => const AccountScreen()),
+          ]),
+        ],
+      ),
     ],
   );
 });

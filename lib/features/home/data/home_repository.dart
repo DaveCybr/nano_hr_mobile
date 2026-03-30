@@ -74,21 +74,28 @@ class HomeRepository {
     final lastDay = DateTime(now.year, now.month + 1, 0).toIso8601String().split('T')[0];
     final data = await supabase
         .from('attendances')
-        .select('work_minutes, late_minutes')
+        .select('work_minutes, late_minutes, status_in, status_out')
         .eq('employee_id', employeeId)
         .gte('attendance_date', firstDay)
         .lte('attendance_date', lastDay);
     final list = data as List;
     int totalWork = 0;
     int totalLate = 0;
+    int lateCount = 0;
+    int earlyOutCount = 0;
     for (final row in list) {
       totalWork += (row['work_minutes'] as num?)?.toInt() ?? 0;
       totalLate += (row['late_minutes'] as num?)?.toInt() ?? 0;
+      if (row['status_in'] == 'late' || ((row['late_minutes'] as num? ?? 0) > 0)) {
+        lateCount++;
+      }
+      if (row['status_out'] == 'early_check_out') earlyOutCount++;
     }
     return {
       'work_minutes': totalWork,
       'late_minutes': totalLate,
-      'early_out_minutes': 0,
+      'late_count': lateCount,
+      'early_out_count': earlyOutCount,
     };
   }
 }

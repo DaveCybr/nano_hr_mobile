@@ -18,6 +18,7 @@ class AttendanceModel {
   final double? faceConfidence;
   final int workMinutes;
   final int lateMinutes;
+  final String? photoInUrl;
 
   const AttendanceModel({
     required this.id,
@@ -39,6 +40,7 @@ class AttendanceModel {
     this.faceConfidence,
     this.workMinutes = 0,
     this.lateMinutes = 0,
+    this.photoInUrl,
   });
 
   factory AttendanceModel.fromMap(Map<String, dynamic> map) {
@@ -62,6 +64,7 @@ class AttendanceModel {
       faceConfidence: (map['face_confidence'] as num?)?.toDouble(),
       workMinutes: map['work_minutes'] ?? 0,
       lateMinutes: map['late_minutes'] ?? 0,
+      photoInUrl: map['photo_in_url'],
     );
   }
 

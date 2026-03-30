@@ -6,9 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/constants/app_text_styles.dart';
 import '../../../shared/models/zone_model.dart';
-import '../../../shared/widgets/app_button.dart';
 import '../../home/providers/home_provider.dart';
 import '../providers/attendance_provider.dart';
 import '../data/attendance_repository.dart';
@@ -130,12 +128,24 @@ class _CheckinLocationScreenState
             : const LatLng(-8.2006, 113.6793);
 
     return Scaffold(
-      backgroundColor: AppColors.bgPrimary,
+      backgroundColor: AppColors.surface,
       appBar: AppBar(
-        backgroundColor: AppColors.bgPrimary,
-        title: const Text('Check In Lokasi'),
+        backgroundColor: AppColors.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        titleSpacing: 0,
+        title: const Text(
+          'Check In',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.onSurface,
+            
+          ),
+        ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: AppColors.onSurface, size: 20),
           onPressed: () => context.pop(),
         ),
         actions: [
@@ -146,7 +156,8 @@ class _CheckinLocationScreenState
                     height: 18,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: AppColors.primary))
-                : const Icon(Icons.refresh_rounded, color: AppColors.primary),
+                : const Icon(Icons.refresh_rounded,
+                    color: AppColors.primary, size: 22),
             onPressed: _refreshing
                 ? null
                 : () async {
@@ -157,7 +168,7 @@ class _CheckinLocationScreenState
           ),
           IconButton(
             icon: const Icon(Icons.my_location_rounded,
-                color: AppColors.primary),
+                color: AppColors.primary, size: 22),
             onPressed: () {
               if (_currentPosition != null) {
                 _mapController.move(
@@ -167,11 +178,12 @@ class _CheckinLocationScreenState
               }
             },
           ),
+          const SizedBox(width: 4),
         ],
       ),
       body: Column(
         children: [
-          // ── Map ──────────────────────────────────────────
+          // ── Map ───────────────────────────────────────────────────────
           Expanded(
             child: FlutterMap(
               mapController: _mapController,
@@ -190,9 +202,9 @@ class _CheckinLocationScreenState
                       .map((z) => CircleMarker(
                             point: LatLng(z.latitude, z.longitude),
                             radius: z.radiusMeters.toDouble(),
-                            color: AppColors.primary.withValues(alpha: 0.15),
+                            color: AppColors.primary.withValues(alpha: 0.1),
                             borderColor:
-                                AppColors.primary.withValues(alpha: 0.7),
+                                AppColors.primary.withValues(alpha: 0.6),
                             borderStrokeWidth: 2,
                             useRadiusInMeter: true,
                           ))
@@ -202,14 +214,21 @@ class _CheckinLocationScreenState
                   markers: _zones
                       .map((z) => Marker(
                             point: LatLng(z.latitude, z.longitude),
-                            width: 40,
-                            height: 40,
+                            width: 44,
+                            height: 44,
                             child: Container(
                               decoration: BoxDecoration(
-                                color: AppColors.bgCard,
+                                color: AppColors.surfaceContainerLowest,
                                 shape: BoxShape.circle,
                                 border: Border.all(
                                     color: AppColors.primary, width: 2),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x14006036),
+                                    blurRadius: 12,
+                                    offset: Offset(0, 4),
+                                  ),
+                                ],
                               ),
                               child: const Icon(Icons.business_rounded,
                                   color: AppColors.primary, size: 20),
@@ -222,13 +241,20 @@ class _CheckinLocationScreenState
                     Marker(
                       point: LatLng(_currentPosition!.latitude,
                           _currentPosition!.longitude),
-                      width: 16,
-                      height: 16,
+                      width: 20,
+                      height: 20,
                       child: Container(
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: AppColors.success,
-                          border: Border.all(color: Colors.white, width: 2),
+                          color: AppColors.primary,
+                          border: Border.all(color: Colors.white, width: 3),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x30006036),
+                              blurRadius: 10,
+                              spreadRadius: 2,
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -237,122 +263,262 @@ class _CheckinLocationScreenState
             ),
           ),
 
-          // ── Bottom panel ──────────────────────────────────
+          // ── Bottom panel ──────────────────────────────────────────────
           Container(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+            padding: EdgeInsets.fromLTRB(20, 0, 20, 36 + MediaQuery.of(context).padding.bottom),
             decoration: const BoxDecoration(
-              color: AppColors.bgCard,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              color: AppColors.surfaceContainerLowest,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0x0A000000),
+                  blurRadius: 24,
+                  offset: Offset(0, -4),
+                ),
+              ],
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // drag handle
+                // Drag handle
                 Center(
                   child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 10),
+                    margin: const EdgeInsets.symmetric(vertical: 12),
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: AppColors.border,
+                      color: AppColors.surfaceContainerHigh,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
                 ),
+
                 if (_loading)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 32),
                     child: Center(
                         child: CircularProgressIndicator(
-                            color: AppColors.primary)),
+                            color: AppColors.primary, strokeWidth: 2)),
                   )
                 else if (_error != null)
                   Column(mainAxisSize: MainAxisSize.min, children: [
-                    Text(_error!,
-                        style: const TextStyle(color: AppColors.danger),
-                        textAlign: TextAlign.center),
-                    const SizedBox(height: 12),
-                    AppButton(
-                        label: 'Coba Lagi',
-                        onPressed: _getLocation,
-                        icon: Icons.refresh_rounded),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppColors.errorContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(children: [
+                        Icon(Icons.info_outline_rounded,
+                            color: AppColors.danger, size: 18),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Mohon maaf, terjadi kendala mendapatkan lokasi.',
+                            style: TextStyle(
+                                color: AppColors.danger,
+                                fontSize: 13,
+                                ),
+                          ),
+                        ),
+                      ]),
+                    ),
+                    const SizedBox(height: 16),
+                    _GradientButton(
+                      label: 'Coba Lagi',
+                      icon: Icons.refresh_rounded,
+                      onPressed: _getLocation,
+                    ),
                   ])
                 else ...[
-                  // Lokasi Kantor
+                  // ── Lokasi Kantor ────────────────────────────────────
                   if (_nearestZone != null) ...[
-                    const Text('Lokasi Kantor',
-                        style: TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 10),
                     Row(children: [
-                      const Icon(Icons.business_rounded,
-                          color: AppColors.primary, size: 18),
-                      const SizedBox(width: 10),
+                      Container(
+                        width: 36, height: 36,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFFE8F5EE),
+                        ),
+                        child: const Icon(Icons.business_rounded,
+                            color: AppColors.primary, size: 18),
+                      ),
+                      const SizedBox(width: 12),
                       Expanded(
-                          child: Text(_nearestZone!.officeName,
-                              style: AppTextStyles.body)),
-                    ]),
-                    if (_nearestZone!.officeAddress != null) ...[
-                      const SizedBox(height: 6),
-                      Row(
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Icon(Icons.place_rounded,
-                                color: AppColors.textMuted, size: 16),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(_nearestZone!.officeAddress!,
-                                  style: AppTextStyles.bodySecondary,
-                                  maxLines: 2,
+                            const Text('Lokasi Kantor',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.textMuted,
+                                    letterSpacing: 0.5,
+                                    )),
+                            const SizedBox(height: 2),
+                            Text(_nearestZone!.officeName,
+                                style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.onSurface,
+                                    )),
+                            if (_nearestZone!.officeAddress != null)
+                              Text(_nearestZone!.officeAddress!,
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textSecondary,
+                                      ),
+                                  maxLines: 1,
                                   overflow: TextOverflow.ellipsis),
-                            ),
-                          ]),
-                    ],
-                    const SizedBox(height: 14),
-                    const Divider(color: AppColors.border, height: 1),
-                    const SizedBox(height: 14),
+                          ],
+                        ),
+                      ),
+                    ]),
+                    const SizedBox(height: 16),
                   ],
 
-                  // Lokasi Kamu saat ini
-                  const Text('Lokasi Kamu saat ini',
-                      style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: AppColors.bgCardLight,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.border),
+                  // ── Lokasi Kamu ──────────────────────────────────────
+                  Row(children: [
+                    Container(
+                      width: 36, height: 36,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFFE8F5EE),
+                      ),
+                      child: const Icon(Icons.location_on_rounded,
+                          color: AppColors.primary, size: 18),
                     ),
-                    child: Row(children: [
-                      const Icon(Icons.location_on_rounded,
-                          color: AppColors.success, size: 18),
-                      const SizedBox(width: 10),
-                      Expanded(
-                          child: Text(_userAddress,
-                              style: AppTextStyles.bodySecondary)),
-                    ]),
-                  ),
-                  const SizedBox(height: 16),
-                  AppButton(
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Lokasi Kamu',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppColors.textMuted,
+                                  letterSpacing: 0.5,
+                                  )),
+                          const SizedBox(height: 2),
+                          Text(_userAddress,
+                              style: const TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.textSecondary,
+                                  ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis),
+                        ],
+                      ),
+                    ),
+                    // Location status chip
+                    if (_locationStatus != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: _locationStatus == 'in_area'
+                              ? const Color(0xFFDCFCE7)
+                              : AppColors.errorContainer,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          _locationStatus == 'in_area' ? 'Dalam Area' : 'Di Luar Area',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: _locationStatus == 'in_area'
+                                ? const Color(0xFF166534)
+                                : AppColors.danger,
+                            
+                          ),
+                        ),
+                      ),
+                  ]),
+
+                  const SizedBox(height: 20),
+
+                  _GradientButton(
                     label: 'Check In Disini',
+                    icon: Icons.login_rounded,
                     onPressed: _currentPosition != null && _nearestZone != null
                         ? _proceed
                         : null,
-                    icon: Icons.login_rounded,
                   ),
                 ],
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Gradient Button ───────────────────────────────────────────────────────────
+
+class _GradientButton extends StatelessWidget {
+  final String label;
+  final IconData? icon;
+  final VoidCallback? onPressed;
+
+  const _GradientButton({
+    required this.label,
+    this.icon,
+    this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = onPressed == null;
+
+    return SizedBox(
+      width: double.infinity,
+      height: 54,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: disabled
+              ? null
+              : const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.primary, AppColors.primaryContainer],
+                ),
+          color: disabled ? AppColors.surfaceContainerLow : null,
+          borderRadius: BorderRadius.circular(100),
+          boxShadow: disabled
+              ? null
+              : const [
+                  BoxShadow(
+                    color: Color(0x14006036),
+                    blurRadius: 24,
+                    offset: Offset(0, 8),
+                  ),
+                ],
+        ),
+        child: ElevatedButton.icon(
+          onPressed: onPressed,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            shape: const StadiumBorder(),
+          ),
+          icon: Icon(
+            icon ?? Icons.arrow_forward_rounded,
+            color: disabled ? AppColors.textMuted : AppColors.onPrimary,
+            size: 20,
+          ),
+          label: Text(
+            label,
+            style: TextStyle(
+              color: disabled ? AppColors.textMuted : AppColors.onPrimary,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              
+            ),
+          ),
+        ),
       ),
     );
   }

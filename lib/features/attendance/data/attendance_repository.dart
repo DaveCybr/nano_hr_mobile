@@ -21,11 +21,18 @@ class AttendanceRepository {
 
   double distanceToZone(double userLat, double userLng, ZoneModel zone) {
     return Geolocator.distanceBetween(
-        userLat, userLng, zone.latitude, zone.longitude);
+      userLat,
+      userLng,
+      zone.latitude,
+      zone.longitude,
+    );
   }
 
   String determineLocationStatus(
-      double userLat, double userLng, List<ZoneModel> zones) {
+    double userLat,
+    double userLng,
+    List<ZoneModel> zones,
+  ) {
     if (zones.isEmpty) return 'out_of_area';
     double minDistance = double.infinity;
     ZoneModel? nearestZone;
@@ -61,7 +68,7 @@ class AttendanceRepository {
       return {
         'verified': false,
         'confidence': 0.0,
-        'error': 'Wajah tidak terdeteksi'
+        'error': 'Wajah tidak terdeteksi',
       };
     }
     final newFaceToken = faces[0]['face_token'];
@@ -83,13 +90,20 @@ class AttendanceRepository {
     };
   }
 
-  String determineCheckInStatus(
-      {required String? scheduleIn, required int toleranceMinutes}) {
+  String determineCheckInStatus({
+    required String? scheduleIn,
+    required int toleranceMinutes,
+  }) {
     if (scheduleIn == null) return 'others';
     final now = DateTime.now();
     final parts = scheduleIn.split(':');
-    final scheduleTime = DateTime(now.year, now.month, now.day,
-        int.parse(parts[0]), int.parse(parts[1]));
+    final scheduleTime = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      int.parse(parts[0]),
+      int.parse(parts[1]),
+    );
     final diffMinutes = now.difference(scheduleTime).inMinutes;
     if (diffMinutes <= 0) return 'on_time';
     if (diffMinutes <= toleranceMinutes) return 'in_tolerance';
@@ -100,8 +114,13 @@ class AttendanceRepository {
     if (scheduleOut == null) return 'on_time';
     final now = DateTime.now();
     final parts = scheduleOut.split(':');
-    final scheduleTime = DateTime(now.year, now.month, now.day,
-        int.parse(parts[0]), int.parse(parts[1]));
+    final scheduleTime = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      int.parse(parts[0]),
+      int.parse(parts[1]),
+    );
     if (now.isBefore(scheduleTime)) return 'early_check_out';
     return 'on_time';
   }
@@ -113,11 +132,29 @@ class AttendanceRepository {
   }) async {
     final today = DateTime.now().toIso8601String().split('T')[0];
     final fileName = 'attendance_${employeeId}_${today}_$type.jpg';
-    await supabase.storage.from('attendance-photos').uploadBinary(
-        fileName, imageBytes,
-        fileOptions:
-            const FileOptions(contentType: 'image/jpeg', upsert: true));
+    await supabase.storage
+        .from('attendance-photos')
+        .uploadBinary(
+          fileName,
+          imageBytes,
+          fileOptions: const FileOptions(
+            contentType: 'image/jpeg',
+            upsert: true,
+          ),
+        );
     return supabase.storage.from('attendance-photos').getPublicUrl(fileName);
+  }
+
+  /// Calculates how many minutes late the employee is.
+  /// Returns 0 if on time or no schedule.
+  int calculateLateMinutes(String? scheduleIn) {
+    if (scheduleIn == null) return 0;
+    final parts = scheduleIn.split(':');
+    final now = DateTime.now();
+    final scheduleTime = DateTime(
+        now.year, now.month, now.day, int.parse(parts[0]), int.parse(parts[1]));
+    final diff = now.difference(scheduleTime).inMinutes;
+    return diff > 0 ? diff : 0;
   }
 
   Future<void> checkIn({
@@ -127,13 +164,14 @@ class AttendanceRepository {
     required double lng,
     required String locationStatus,
     required String statusIn,
+    required int lateMinutes,
     required bool faceVerified,
     required double faceConfidence,
     required String? reasonIn,
     String? photoUrl,
   }) async {
     final today = DateTime.now().toIso8601String().split('T')[0];
-    final now = DateTime.now().toIso8601String();
+    final now = DateTime.now().toUtc().toIso8601String();
     await supabase.from('attendances').upsert({
       'employee_id': employeeId,
       'zone_in_id': zoneId,
@@ -146,11 +184,14 @@ class AttendanceRepository {
       'face_verified': faceVerified,
       'face_confidence': faceConfidence,
       'reason_in': reasonIn,
+      'late_minutes': lateMinutes,
+      if (photoUrl != null) 'photo_in_url': photoUrl,
     }, onConflict: 'employee_id,attendance_date');
   }
 
   Future<void> checkOut({
     required String attendanceId,
+    required String employeeId,
     required String zoneId,
     required double lat,
     required double lng,
@@ -159,19 +200,42 @@ class AttendanceRepository {
     required bool faceVerified,
     required double faceConfidence,
     required String? reasonOut,
+    required String? timeIn,
   }) async {
-    final now = DateTime.now().toIso8601String();
-    await supabase.from('attendances').update({
-      'zone_out_id': zoneId,
-      'time_out': now,
-      'status_out': statusOut,
-      'location_out_status': locationStatus,
-      'lat_out': lat,
-      'lng_out': lng,
-      'face_verified': faceVerified,
-      'face_confidence': faceConfidence,
-      'reason_out': reasonOut,
-    }).eq('id', attendanceId);
+    final nowUtc = DateTime.now().toUtc();
+    final now = nowUtc.toIso8601String();
+
+    int workMinutes = 0;
+    if (timeIn != null) {
+      final checkInTime = DateTime.parse(timeIn);
+      workMinutes = nowUtc.difference(checkInTime).inMinutes.clamp(0, 9999);
+    }
+
+    final result = await supabase
+        .from('attendances')
+        .update({
+          'zone_out_id': zoneId,
+          'time_out': now,
+          'status_out': statusOut,
+          'location_out_status': locationStatus,
+          'lat_out': lat,
+          'lng_out': lng,
+          'face_verified': faceVerified,
+          'face_confidence': faceConfidence,
+          'reason_out': reasonOut,
+          'work_minutes': workMinutes,
+        })
+        .eq('id', attendanceId)
+        .eq('employee_id', employeeId)
+        .select();
+    if (result.isEmpty) {
+      print(
+        'Gagal menyimpan checkout: data absensi tidak ditemukan (id=$attendanceId)',
+      );
+      throw Exception(
+        'Gagal menyimpan checkout: data absensi tidak ditemukan (id=$attendanceId)',
+      );
+    }
   }
 
   Future<Position> getCurrentPosition() async {
@@ -185,10 +249,10 @@ class AttendanceRepository {
       }
     }
     if (permission == LocationPermission.deniedForever) {
-      throw Exception(
-          'Izin lokasi ditolak permanen. Aktifkan di pengaturan.');
+      throw Exception('Izin lokasi ditolak permanen. Aktifkan di pengaturan.');
     }
     return await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high);
+      desiredAccuracy: LocationAccuracy.high,
+    );
   }
 }

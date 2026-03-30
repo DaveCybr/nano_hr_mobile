@@ -6,8 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/constants/app_text_styles.dart';
-import '../../../shared/widgets/app_button.dart';
 import '../../home/providers/home_provider.dart';
 import '../data/attendance_repository.dart';
 
@@ -26,6 +24,7 @@ class _CheckinFaceScreenState extends ConsumerState<CheckinFaceScreen> {
   String? _resultMessage;
   bool? _verified;
   Uint8List? _capturedBytes;
+  String? _employeeId;
 
   @override
   void initState() {
@@ -113,14 +112,17 @@ class _CheckinFaceScreenState extends ConsumerState<CheckinFaceScreen> {
     } catch (e) {
       setState(() {
         _processing = false;
-        _resultMessage = 'Terjadi kesalahan: $e';
+        _resultMessage = 'Mohon maaf, terjadi kendala: $e';
         _verified = false;
       });
     }
   }
 
   Future<void> _doCheckIn(
-      dynamic employee, AttendanceRepository repo, Uint8List bytes, double confidence) async {
+      dynamic employee,
+      AttendanceRepository repo,
+      Uint8List bytes,
+      double confidence) async {
     final lat = widget.locationData['lat'] as double;
     final lng = widget.locationData['lng'] as double;
     final locationStatus = widget.locationData['location_status'] as String;
@@ -133,6 +135,7 @@ class _CheckinFaceScreenState extends ConsumerState<CheckinFaceScreen> {
         (employee.group?['tolerance_minutes'] as num?)?.toInt() ?? 0;
     final statusIn = repo.determineCheckInStatus(
         scheduleIn: schedule['work_in'], toleranceMinutes: toleranceMinutes);
+    final lateMinutes = repo.calculateLateMinutes(schedule['work_in']);
 
     String? photoUrl;
     try {
@@ -152,21 +155,22 @@ class _CheckinFaceScreenState extends ConsumerState<CheckinFaceScreen> {
       lng: lng,
       locationStatus: locationStatus,
       statusIn: statusIn,
+      lateMinutes: lateMinutes,
       faceVerified: true,
       faceConfidence: confidence,
       reasonIn: reason,
       photoUrl: photoUrl,
     );
 
-    ref.invalidate(currentEmployeeProvider);
-    ref.invalidate(todayAttendanceProvider(employee.id as String));
-
+    _employeeId = employee.id as String;
     if (mounted) _showSuccessModal(statusIn);
   }
 
-  // ── Late modal with radio buttons ──────────────────────────────────────────
+  // ── Late modal ────────────────────────────────────────────────────────────
+
   Future<String?> _showLateModal(DateTime checkInTime) async {
-    final dateLabel = DateFormat('d MMM yyyy, HH:mm', 'id_ID').format(checkInTime);
+    final dateLabel =
+        DateFormat('d MMM yyyy, HH:mm', 'id_ID').format(checkInTime);
     String selectedCategory = 'Lainnya';
     final noteController = TextEditingController();
     int noteLength = 0;
@@ -175,108 +179,188 @@ class _CheckinFaceScreenState extends ConsumerState<CheckinFaceScreen> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => AlertDialog(
-          backgroundColor: AppColors.bgCard,
+        builder: (ctx, setModalState) => Dialog(
+          backgroundColor: AppColors.surfaceContainerLowest,
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-          contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          title: const Row(children: [
-            Icon(Icons.error_rounded, color: AppColors.danger, size: 22),
-            SizedBox(width: 8),
-            Text('Anda telat',
-                style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold)),
-          ]),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Check-in time box
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: AppColors.danger.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Column(children: [
-                  const Text('Check In:',
-                      style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 2),
-                  Text(dateLabel,
-                      style: const TextStyle(
-                          color: AppColors.danger,
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold)),
-                ]),
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'Mohon cantumkan alasan mengapa Anda telat:',
-                style: AppTextStyles.bodySecondary,
-              ),
-              const SizedBox(height: 10),
-              // Radio options
-              for (final opt in ['Meeting', 'Insiden', 'Lainnya'])
-                RadioListTile<String>(
-                  value: opt,
-                  groupValue: selectedCategory,
-                  onChanged: (v) =>
-                      setModalState(() => selectedCategory = v ?? 'Lainnya'),
-                  title: Text(opt,
-                      style: const TextStyle(
-                          color: AppColors.textPrimary, fontSize: 13)),
-                  activeColor: AppColors.primary,
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                ),
-              const SizedBox(height: 8),
-              // Note field with counter
-              TextField(
-                controller: noteController,
-                maxLength: 50,
-                maxLines: 2,
-                onChanged: (v) => setModalState(() => noteLength = v.length),
-                decoration: InputDecoration(
-                  hintText: 'Beri catatan disini',
-                  counterText: '$noteLength/50',
-                  counterStyle: const TextStyle(
-                      color: AppColors.textMuted, fontSize: 11),
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: () {
-                    final reason = selectedCategory == 'Lainnya'
-                        ? noteController.text.trim()
-                        : '$selectedCategory: ${noteController.text.trim()}';
-                    Navigator.pop(ctx, reason);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Row(children: [
+                  Container(
+                    width: 40, height: 40,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.errorContainer,
+                    ),
+                    child: const Icon(Icons.schedule_rounded,
+                        color: AppColors.danger, size: 20),
                   ),
-                  child: const Text('Lanjut',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(width: 12),
+                  const Text('Anda Terlambat',
+                      style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.onSurface,
+                          )),
+                ]),
+                const SizedBox(height: 16),
+
+                // Time chip
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.errorContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.access_time_rounded,
+                          color: AppColors.danger, size: 16),
+                      const SizedBox(width: 8),
+                      Text(dateLabel,
+                          style: const TextStyle(
+                              color: AppColors.danger,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              )),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 16),
+
+                const Text('Alasan keterlambatan:',
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                        )),
+                const SizedBox(height: 8),
+
+                // Category options
+                for (final opt in ['Meeting', 'Insiden', 'Lainnya'])
+                  GestureDetector(
+                    onTap: () =>
+                        setModalState(() => selectedCategory = opt),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: selectedCategory == opt
+                            ? AppColors.primary.withValues(alpha: 0.08)
+                            : AppColors.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: selectedCategory == opt
+                              ? AppColors.primary.withValues(alpha: 0.4)
+                              : Colors.transparent,
+                        ),
+                      ),
+                      child: Row(children: [
+                        Icon(
+                          selectedCategory == opt
+                              ? Icons.radio_button_checked_rounded
+                              : Icons.radio_button_off_rounded,
+                          color: selectedCategory == opt
+                              ? AppColors.primary
+                              : AppColors.textMuted,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(opt,
+                            style: TextStyle(
+                                fontSize: 14,
+                                color: selectedCategory == opt
+                                    ? AppColors.primary
+                                    : AppColors.onSurface,
+                                fontWeight: selectedCategory == opt
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
+                                )),
+                      ]),
+                    ),
+                  ),
+
+                const SizedBox(height: 8),
+
+                // Note field
+                TextField(
+                  controller: noteController,
+                  maxLength: 50,
+                  maxLines: 2,
+                  onChanged: (v) =>
+                      setModalState(() => noteLength = v.length),
+                  style: const TextStyle(
+                      color: AppColors.onSurface,
+                      fontSize: 14,
+                      ),
+                  decoration: InputDecoration(
+                    hintText: 'Beri catatan (opsional)',
+                    counterText: '$noteLength/50',
+                    counterStyle: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 11,
+                        ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // Submit button
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [
+                          AppColors.primary,
+                          AppColors.primaryContainer
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(100),
+                    ),
+                    child: ElevatedButton(
+                      onPressed: () {
+                        final reason = selectedCategory == 'Lainnya'
+                            ? noteController.text.trim()
+                            : '$selectedCategory: ${noteController.text.trim()}';
+                        Navigator.pop(ctx, reason);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        shape: const StadiumBorder(),
+                      ),
+                      child: const Text('Lanjutkan',
+                          style: TextStyle(
+                              color: AppColors.onPrimary,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              )),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+
+  // ── Success modal ─────────────────────────────────────────────────────────
 
   void _showSuccessModal(String statusIn) {
     String msg;
@@ -287,29 +371,90 @@ class _CheckinFaceScreenState extends ConsumerState<CheckinFaceScreen> {
     } else {
       msg = 'Check in berhasil tepat waktu!';
     }
+
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.bgCard,
+      builder: (ctx) => Dialog(
+        backgroundColor: AppColors.surfaceContainerLowest,
         shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(children: [
-          Icon(Icons.check_circle_rounded, color: AppColors.success),
-          SizedBox(width: 8),
-          Text('Check In Berhasil',
-              style: TextStyle(color: AppColors.textPrimary)),
-        ]),
-        content: Text(msg, style: AppTextStyles.bodySecondary),
-        actions: [
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              context.go('/home');
-            },
-            child: const Text('Kembali ke Beranda'),
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        insetPadding:
+            const EdgeInsets.symmetric(horizontal: 32, vertical: 80),
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Success icon
+              Container(
+                width: 72, height: 72,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0xFFDCFCE7),
+                ),
+                child: const Icon(Icons.check_rounded,
+                    color: Color(0xFF166534), size: 40),
+              ),
+              const SizedBox(height: 20),
+              const Text('Check In Berhasil',
+                  style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.onSurface,
+                      )),
+              const SizedBox(height: 8),
+              Text(msg,
+                  style: const TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textSecondary,
+                      ),
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 28),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [
+                        AppColors.primary,
+                        AppColors.primaryContainer
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(100),
+                  ),
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      final empId = _employeeId;
+                      if (empId != null) {
+                        ref.invalidate(todayAttendanceProvider(empId));
+                        ref.invalidate(monthlySummaryProvider(empId));
+                        ref.invalidate(recentAttendancesProvider(empId));
+                      }
+                      ref.invalidate(currentEmployeeProvider);
+                      context.go('/home');
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      shape: const StadiumBorder(),
+                    ),
+                    child: const Text('Kembali ke Beranda',
+                        style: TextStyle(
+                            color: AppColors.onPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            )),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -318,58 +463,94 @@ class _CheckinFaceScreenState extends ConsumerState<CheckinFaceScreen> {
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final dateLabel =
-        DateFormat('d MMMM yyyy, HH:mm', 'id_ID').format(now);
+        DateFormat('d MMMM yyyy  •  HH:mm', 'id_ID').format(now);
 
     return Scaffold(
       backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        backgroundColor: Colors.black,
-        title: const Text('Verifikasi Wajah Anda',
-            style: TextStyle(color: Colors.white)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        titleSpacing: 0,
+        title: const Text('Verifikasi Wajah',
+            style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                )),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: Colors.white),
+              color: Colors.white, size: 20),
           onPressed: () => context.pop(),
         ),
       ),
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Camera / captured preview
+          // Black base
+          const ColoredBox(color: Colors.black),
+
+          // Camera preview — fill screen with cover (portrait-correct)
           if (_cameraReady && _capturedBytes == null)
-            CameraPreview(_cameraController!),
+            Positioned.fill(
+              child: FittedBox(
+                fit: BoxFit.cover,
+                clipBehavior: Clip.hardEdge,
+                child: SizedBox(
+                  width: _cameraController!.value.previewSize!.height,
+                  height: _cameraController!.value.previewSize!.width,
+                  child: CameraPreview(_cameraController!),
+                ),
+              ),
+            ),
+
+          // Captured photo — contain to preserve proportions
           if (_capturedBytes != null)
-            Image.memory(_capturedBytes!, fit: BoxFit.cover),
+            Center(
+              child: Image.memory(_capturedBytes!, fit: BoxFit.contain),
+            ),
+
+          // Loading indicator
           if (!_cameraReady && _capturedBytes == null)
             const Center(
-                child: CircularProgressIndicator(color: AppColors.primary)),
+              child: CircularProgressIndicator(color: AppColors.primary),
+            ),
 
-          // Date/time + subtitle at top
+          // Top gradient + date/time
+          Positioned(
+            top: 0, left: 0, right: 0,
+            child: Container(
+              height: 160,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.black54, Colors.transparent],
+                ),
+              ),
+            ),
+          ),
+
           if (!_processing)
             Positioned(
-              top: 16,
-              left: 0, right: 0,
+              top: 100, left: 0, right: 0,
               child: Column(children: [
                 Text(dateLabel,
                     style: const TextStyle(
                         color: Colors.white,
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        shadows: [
-                          Shadow(blurRadius: 8, color: Colors.black54)
-                        ])),
+                        )),
                 const SizedBox(height: 4),
                 const Text('Pastikan wajah Anda terlihat jelas.',
                     style: TextStyle(
-                        color: AppColors.primary,
+                        color: Color(0xFF86EFAC),
                         fontSize: 12,
-                        shadows: [
-                          Shadow(blurRadius: 8, color: Colors.black54)
-                        ])),
+                        )),
               ]),
             ),
 
-          // Corner-bracket face guide (only when idle)
+          // Face corner brackets
           if (_cameraReady && !_processing && _verified == null)
             Center(child: _buildCornerBrackets()),
 
@@ -382,7 +563,9 @@ class _CheckinFaceScreenState extends ConsumerState<CheckinFaceScreen> {
                   CircularProgressIndicator(color: AppColors.primary),
                   SizedBox(height: 16),
                   Text('Memverifikasi wajah...',
-                      style: TextStyle(color: Colors.white, fontSize: 14)),
+                      style:
+                          TextStyle(color: Colors.white, fontSize: 14,
+                              )),
                 ]),
               ),
             ),
@@ -390,59 +573,86 @@ class _CheckinFaceScreenState extends ConsumerState<CheckinFaceScreen> {
           // Result banner
           if (_resultMessage != null)
             Positioned(
-              top: 80, left: 20, right: 20,
+              top: 100, left: 20, right: 20,
               child: Container(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 10),
+                    horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
                   color: _verified == true
-                      ? AppColors.success.withValues(alpha: 0.9)
-                      : AppColors.danger.withValues(alpha: 0.9),
-                  borderRadius: BorderRadius.circular(12),
+                      ? AppColors.primary.withValues(alpha: 0.92)
+                      : AppColors.danger.withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                child: Text(_resultMessage!,
-                    style: const TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w600),
-                    textAlign: TextAlign.center),
+                child: Row(children: [
+                  Icon(
+                    _verified == true
+                        ? Icons.check_circle_rounded
+                        : Icons.error_rounded,
+                    color: Colors.white, size: 18,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(_resultMessage!,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                            )),
+                  ),
+                ]),
               ),
             ),
 
           // Bottom controls
           Positioned(
-            bottom: 48, left: 24, right: 24,
+            bottom: 52 + MediaQuery.of(context).padding.bottom, left: 24, right: 24,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               if (_verified == false)
-                AppButton(
-                    label: 'Coba Lagi',
-                    onPressed: () => setState(() {
-                          _capturedBytes = null;
-                          _resultMessage = null;
-                          _verified = null;
-                        }),
-                    icon: Icons.refresh_rounded)
+                _CameraButton(
+                  label: 'Coba Lagi',
+                  icon: Icons.refresh_rounded,
+                  onPressed: () => setState(() {
+                    _capturedBytes = null;
+                    _resultMessage = null;
+                    _verified = null;
+                  }),
+                )
               else if (!_processing && _verified == null) ...[
                 GestureDetector(
                   onTap: _captureAndVerify,
                   child: Container(
-                    width: 72, height: 72,
+                    width: 76, height: 76,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: AppColors.primary.withValues(alpha: 0.9),
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppColors.primaryContainer,
+                          AppColors.primary,
+                        ],
+                      ),
                       border: Border.all(color: Colors.white, width: 3),
                       boxShadow: [
                         BoxShadow(
-                            color: AppColors.primary.withValues(alpha: 0.4),
-                            blurRadius: 20,
-                            spreadRadius: 2),
+                            color: AppColors.primary.withValues(alpha: 0.5),
+                            blurRadius: 24,
+                            spreadRadius: 4),
                       ],
                     ),
-                    child: const Icon(Icons.face_retouching_natural_rounded,
-                        color: Colors.white, size: 36),
+                    child: const Icon(
+                        Icons.face_retouching_natural_rounded,
+                        color: Colors.white,
+                        size: 36),
                   ),
                 ),
-                const SizedBox(height: 10),
-                const Text('Posisikan wajah dalam bingkai lalu tekan tombol',
-                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                const SizedBox(height: 12),
+                const Text(
+                    'Posisikan wajah dalam bingkai lalu tekan tombol',
+                    style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        ),
                     textAlign: TextAlign.center),
               ],
             ]),
@@ -452,7 +662,6 @@ class _CheckinFaceScreenState extends ConsumerState<CheckinFaceScreen> {
     );
   }
 
-  // Corner bracket guide widget
   Widget _buildCornerBrackets() {
     const size = 220.0;
     const thick = 3.0;
@@ -464,38 +673,82 @@ class _CheckinFaceScreenState extends ConsumerState<CheckinFaceScreen> {
       width: size,
       height: size * 1.25,
       child: Stack(children: [
-        // Top-left
         Positioned(
             top: 0, left: 0,
             child: CustomPaint(
                 size: const Size(len + r, len + r),
                 painter: _CornerPainter(
                     topLeft: true, color: c, thick: thick, len: len, r: r))),
-        // Top-right
         Positioned(
             top: 0, right: 0,
             child: CustomPaint(
                 size: const Size(len + r, len + r),
                 painter: _CornerPainter(
                     topRight: true, color: c, thick: thick, len: len, r: r))),
-        // Bottom-left
-        Positioned(
+        const Positioned(
             bottom: 0, left: 0,
             child: CustomPaint(
-                size: const Size(len + r, len + r),
+                size: Size(len + r, len + r),
                 painter: _CornerPainter(
-                    bottomLeft: true, color: c, thick: thick, len: len, r: r))),
-        // Bottom-right
-        Positioned(
+                    bottomLeft: true,
+                    color: c,
+                    thick: thick,
+                    len: len,
+                    r: r))),
+        const Positioned(
             bottom: 0, right: 0,
             child: CustomPaint(
-                size: const Size(len + r, len + r),
+                size: Size(len + r, len + r),
                 painter: _CornerPainter(
-                    bottomRight: true, color: c, thick: thick, len: len, r: r))),
+                    bottomRight: true,
+                    color: c,
+                    thick: thick,
+                    len: len,
+                    r: r))),
       ]),
     );
   }
 }
+
+// ── Camera action button ──────────────────────────────────────────────────────
+
+class _CameraButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  const _CameraButton({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: ElevatedButton.icon(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.white.withValues(alpha: 0.15),
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: const StadiumBorder(),
+          side: const BorderSide(color: Colors.white30),
+        ),
+        icon: Icon(icon, size: 18),
+        label: Text(label,
+            style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                
+                fontSize: 15)),
+      ),
+    );
+  }
+}
+
+// ── Corner bracket painter ────────────────────────────────────────────────────
 
 class _CornerPainter extends CustomPainter {
   final bool topLeft, topRight, bottomLeft, bottomRight;

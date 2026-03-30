@@ -48,6 +48,9 @@ dependencies:
   fluttertoast: ^9.0.0
   permission_handler: ^11.3.1
 
+  # Fonts
+  google_fonts: ^6.2.1
+
   # Icons
   lucide_icons: ^0.257.0
 
