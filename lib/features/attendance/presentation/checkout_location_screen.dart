@@ -477,7 +477,9 @@ class _CheckoutLocationScreenState
           const SizedBox(width: 4),
         ],
       ),
-      body: Column(
+      body: SafeArea(
+        top: false,
+        child: Column(
         children: [
           // ── Map ─────────────────────────────────────────────────────────
           Expanded(
@@ -732,6 +734,7 @@ class _CheckoutLocationScreenState
             ),
           ),
         ],
+        ),
       ),
     );
   }
