@@ -276,27 +276,17 @@ class _Hero extends StatelessWidget {
       child: Column(
         children: [
           // ── App bar ──────────────────────────────────────────────
-          SafeArea(
+          const SafeArea(
             bottom: false,
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Row(
-                children: [
-                  IconButton(
-                    onPressed: () => context.pop(),
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                        color: AppColors.onSurface, size: 20),
-                  ),
-                  const Text(
-                    'Profil',
-                    style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.onSurface,
-                        ),
-                  ),
-                ],
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Text(
+                'Profil',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.onSurface,
+                ),
               ),
             ),
           ),

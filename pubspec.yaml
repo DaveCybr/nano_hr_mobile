@@ -10,6 +10,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   # Supabase
   supabase_flutter: ^2.5.6
@@ -41,7 +43,7 @@ dependencies:
   flutter_secure_storage: ^9.2.2
 
   # UI utilities
-  intl: ^0.19.0
+  intl: ^0.20.2
   timeago: ^3.6.1
   shimmer: ^3.0.0
   lottie: ^3.1.2
@@ -54,6 +56,9 @@ dependencies:
   # Icons
   lucide_icons: ^0.257.0
 
+  # Env
+  flutter_dotenv: ^5.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -65,3 +70,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - .env

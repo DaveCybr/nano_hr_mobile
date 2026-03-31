@@ -17,16 +17,38 @@ class EnrollFaceScreen extends ConsumerStatefulWidget {
   ConsumerState<EnrollFaceScreen> createState() => _EnrollFaceScreenState();
 }
 
+enum _EnrollStep { verify, enroll }
+
 class _EnrollFaceScreenState extends ConsumerState<EnrollFaceScreen> {
   CameraController? _cameraController;
   bool _cameraReady = false;
   bool _processing = false;
   String? _error;
+  _EnrollStep _step = _EnrollStep.enroll;
+  String? _existingFaceToken;
 
   @override
   void initState() {
     super.initState();
     _initCamera();
+    _checkExistingFaceToken();
+  }
+
+  Future<void> _checkExistingFaceToken() async {
+    final session = supabase.auth.currentSession;
+    if (session == null) return;
+    final data = await supabase
+        .from('employees')
+        .select('face_token')
+        .eq('auth_user_id', session.user.id)
+        .maybeSingle();
+    final token = data?['face_token'] as String?;
+    if (token != null && mounted) {
+      setState(() {
+        _existingFaceToken = token;
+        _step = _EnrollStep.verify;
+      });
+    }
   }
 
   Future<void> _initCamera() async {
@@ -52,6 +74,74 @@ class _EnrollFaceScreenState extends ConsumerState<EnrollFaceScreen> {
   void dispose() {
     _cameraController?.dispose();
     super.dispose();
+  }
+
+  Future<void> _captureAndVerify() async {
+    if (_cameraController == null || !_cameraReady || _processing) return;
+    setState(() {
+      _processing = true;
+      _error = null;
+    });
+    try {
+      final photo = await _cameraController!.takePicture();
+      final imageBytes = await File(photo.path).readAsBytes();
+      final base64Image = base64Encode(imageBytes);
+
+      // Detect face
+      final detectRes = await http.post(
+        Uri.parse('${AppConstants.faceppBaseUrl}/detect'),
+        body: {
+          'api_key': AppConstants.faceppApiKey,
+          'api_secret': AppConstants.faceppApiSecret,
+          'image_base64': base64Image,
+          'return_attributes': 'none',
+        },
+      );
+      final detectData = jsonDecode(detectRes.body) as Map<String, dynamic>;
+      final faces = detectData['faces'] as List?;
+      if (faces == null || faces.isEmpty) {
+        setState(() {
+          _error = 'Wajah tidak terdeteksi. Pastikan pencahayaan cukup.';
+          _processing = false;
+        });
+        return;
+      }
+
+      // Compare with stored face token
+      final compareRes = await http.post(
+        Uri.parse('${AppConstants.faceppBaseUrl}/compare'),
+        body: {
+          'api_key': AppConstants.faceppApiKey,
+          'api_secret': AppConstants.faceppApiSecret,
+          'face_token1': _existingFaceToken!,
+          'face_token2': faces[0]['face_token'] as String,
+        },
+      );
+      final compareData = jsonDecode(compareRes.body) as Map<String, dynamic>;
+      final confidence = (compareData['confidence'] as num?)?.toDouble() ?? 0.0;
+
+      if (confidence < 76.5) {
+        setState(() {
+          _error = 'Verifikasi gagal (${confidence.toStringAsFixed(1)}%). Wajah tidak cocok.';
+          _processing = false;
+        });
+        return;
+      }
+
+      // Verified — proceed to enroll
+      setState(() {
+        _step = _EnrollStep.enroll;
+        _processing = false;
+        _error = null;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Terjadi kesalahan: $e';
+          _processing = false;
+        });
+      }
+    }
   }
 
   Future<void> _captureAndEnroll() async {
@@ -236,10 +326,10 @@ class _EnrollFaceScreenState extends ConsumerState<EnrollFaceScreen> {
         elevation: 0,
         titleSpacing: 0,
         automaticallyImplyLeading: false,
-        title: const Center(
+        title: Center(
           child: Text(
-            'Daftarkan Wajah',
-            style: TextStyle(
+            _step == _EnrollStep.verify ? 'Verifikasi Wajah' : 'Daftarkan Wajah',
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -306,15 +396,17 @@ class _EnrollFaceScreenState extends ConsumerState<EnrollFaceScreen> {
 
           // Sub-title below AppBar
           if (!_processing)
-            const Positioned(
+            Positioned(
               top: 104,
               left: 0,
               right: 0,
               child: Column(
                 children: [
                   Text(
-                    'Foto wajah digunakan untuk verifikasi absensi.',
-                    style: TextStyle(color: Color(0xFF86EFAC), fontSize: 12),
+                    _step == _EnrollStep.verify
+                        ? 'Verifikasi wajah Anda sebelum memperbarui data.'
+                        : 'Foto wajah digunakan untuk verifikasi absensi.',
+                    style: const TextStyle(color: Color(0xFF86EFAC), fontSize: 12),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -329,15 +421,17 @@ class _EnrollFaceScreenState extends ConsumerState<EnrollFaceScreen> {
           if (_processing)
             Container(
               color: Colors.black54,
-              child: const Center(
+              child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircularProgressIndicator(color: AppColors.primary),
-                    SizedBox(height: 16),
+                    const CircularProgressIndicator(color: AppColors.primary),
+                    const SizedBox(height: 16),
                     Text(
-                      'Mendaftarkan wajah...',
-                      style: TextStyle(color: Colors.white, fontSize: 14),
+                      _step == _EnrollStep.verify
+                          ? 'Memverifikasi wajah...'
+                          : 'Mendaftarkan wajah...',
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
                     ),
                   ],
                 ),
@@ -392,7 +486,9 @@ class _EnrollFaceScreenState extends ConsumerState<EnrollFaceScreen> {
               children: [
                 if (!_processing) ...[
                   GestureDetector(
-                    onTap: _captureAndEnroll,
+                    onTap: _step == _EnrollStep.verify
+                        ? _captureAndVerify
+                        : _captureAndEnroll,
                     child: Container(
                       width: 76,
                       height: 76,
@@ -423,9 +519,11 @@ class _EnrollFaceScreenState extends ConsumerState<EnrollFaceScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    'Posisikan wajah dalam bingkai lalu tekan tombol',
-                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  Text(
+                    _step == _EnrollStep.verify
+                        ? 'Verifikasi wajah lama Anda untuk melanjutkan'
+                        : 'Posisikan wajah dalam bingkai lalu tekan tombol',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
                     textAlign: TextAlign.center,
                   ),
                 ],

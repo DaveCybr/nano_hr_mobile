@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -283,11 +284,17 @@ class _Header extends StatelessWidget {
 
   const _Header({required this.employee, this.attendance});
 
+  String _greeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 11) return 'Selamat Pagi';
+    if (hour < 15) return 'Selamat Siang';
+    if (hour < 18) return 'Selamat Sore';
+    return 'Selamat Malam';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final group = employee.group;
     final position = employee.position;
-    final groupName = group?['name'] as String? ?? 'nano.HR';
     final positionName = position?['name'] as String? ?? '';
     final roleLabel = _roleLabel(employee.accessType);
 
@@ -295,102 +302,65 @@ class _Header extends StatelessWidget {
       bottom: false,
       child: Container(
         color: AppColors.surface,
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            // Name & greeting
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    groupName.toUpperCase(),
+                    _greeting(),
                     style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
+                      fontSize: 12,
                       color: AppColors.textMuted,
-                      letterSpacing: 0.6,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Text(
-                    employee.fullName.toUpperCase(),
+                    employee.fullName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 22,
+                      fontSize: 17,
                       fontWeight: FontWeight.bold,
                       color: AppColors.onSurface,
-                      letterSpacing: -0.3,
+                      letterSpacing: -0.2,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Text(
-                        '● ',
-                        style: TextStyle(
-                          color: AppColors.primary,
-                          fontSize: 10,
-                        ),
+                  if (positionName.isNotEmpty)
+                    Text(
+                      positionName,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
                       ),
-                      Text(
-                        positionName.isNotEmpty
-                            ? '$roleLabel · $positionName'
-                            : roleLabel,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textSecondary,
-                        ),
+                    )
+                  else
+                    Text(
+                      roleLabel,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
                       ),
-                    ],
-                  ),
+                    ),
                 ],
               ),
             ),
             const SizedBox(width: 12),
-            // Notification bell
-            Stack(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.surfaceContainerLow,
-                  ),
-                  child: const Icon(
-                    Icons.notifications_outlined,
-                    color: AppColors.onSurface,
-                    size: 22,
-                  ),
-                ),
-                Positioned(
-                  top: 8,
-                  right: 10,
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.danger,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(width: 8),
             // Avatar
             GestureDetector(
               onTap: () => context.push('/account'),
               child: Container(
-                width: 44,
-                height: 44,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: AppColors.surfaceContainerLow,
                   border: Border.all(
-                    color: AppColors.surfaceContainerHigh,
+                    color: AppColors.primary.withValues(alpha: 0.2),
                     width: 2,
                   ),
                 ),
@@ -722,7 +692,7 @@ class _MenuGrid extends StatelessWidget {
       '/attendance/history',
       Color(0xFF006036),
     ),
-    _MenuItem(Icons.bar_chart_rounded, 'Aktivitas', null, Color(0xFF1976D2)),
+    _MenuItem(Icons.bar_chart_rounded, 'Aktivitas', '/attendance/history', Color(0xFF1976D2)),
     _MenuItem(Icons.beach_access_rounded, 'Cuti', '/leave', Color(0xFFF57C00)),
     _MenuItem(
       Icons.assignment_rounded,
@@ -764,7 +734,19 @@ class _MenuGrid extends StatelessWidget {
         final m = _menus[i];
         return GestureDetector(
           onTap: () {
-            if (m.route != null) context.push(m.route!);
+            if (m.route != null) {
+              context.push(m.route!);
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('${m.label} segera hadir'),
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 2),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              );
+            }
           },
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1131,36 +1113,88 @@ class _CardShimmer extends StatelessWidget {
 
 // ── Daily Summary Card ────────────────────────────────────────────────────────
 
-class _DailySummaryCard extends StatelessWidget {
+class _DailySummaryCard extends StatefulWidget {
   final AttendanceModel? today;
   final Map<String, String?>? schedule;
 
   const _DailySummaryCard({this.today, this.schedule});
 
-  String _fmt(int minutes) {
+  @override
+  State<_DailySummaryCard> createState() => _DailySummaryCardState();
+}
+
+class _DailySummaryCardState extends State<_DailySummaryCard> {
+  Timer? _timer;
+  DateTime _now = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimer();
+  }
+
+  @override
+  void didUpdateWidget(_DailySummaryCard old) {
+    super.didUpdateWidget(old);
+    _startTimer();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    // Only tick when checked in but not yet checked out
+    if (widget.today?.hasCheckedIn == true && widget.today?.hasCheckedOut == false) {
+      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() => _now = DateTime.now());
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  int _elapsedSeconds() {
+    final today = widget.today;
+    if (today == null || !today.hasCheckedIn) return 0;
+    if (today.hasCheckedOut) return (today.workMinutes) * 60;
+    final timeIn = DateTime.tryParse(today.timeIn!)?.toLocal();
+    if (timeIn == null) return 0;
+    return _now.difference(timeIn).inSeconds.clamp(0, 999999);
+  }
+
+  String _fmt(int totalSeconds) {
+    final h = totalSeconds ~/ 3600;
+    final m = (totalSeconds % 3600) ~/ 60;
+    final s = totalSeconds % 60;
+    return '$h jam  -  $m menit  -  $s detik';
+  }
+
+  String _fmtMinutes(int minutes) {
     final h = minutes ~/ 60;
     final m = minutes % 60;
     return '$h jam  -  $m menit  -  0 detik';
   }
 
-  double _progress(int workMin) {
-    final inStr = schedule?['work_in'];
-    final outStr = schedule?['work_out'];
+  double _progress(int totalSeconds) {
+    final inStr = widget.schedule?['work_in'];
+    final outStr = widget.schedule?['work_out'];
     if (inStr == null || outStr == null) return 0;
     final inP = inStr.split(':');
     final outP = outStr.split(':');
-    final scheduled =
-        (int.parse(outP[0]) * 60 + int.parse(outP[1])) -
-        (int.parse(inP[0]) * 60 + int.parse(inP[1]));
-    if (scheduled <= 0) return 0;
-    return (workMin / scheduled).clamp(0.0, 1.0);
+    final scheduledSeconds =
+        ((int.parse(outP[0]) * 60 + int.parse(outP[1])) -
+         (int.parse(inP[0]) * 60 + int.parse(inP[1]))) * 60;
+    if (scheduledSeconds <= 0) return 0;
+    return (totalSeconds / scheduledSeconds).clamp(0.0, 1.0);
   }
 
   @override
   Widget build(BuildContext context) {
-    final workMin = today?.workMinutes ?? 0;
-    final lateMin = today?.lateMinutes ?? 0;
-    final progress = _progress(workMin);
+    final lateMin = widget.today?.lateMinutes ?? 0;
+    final elapsedSec = _elapsedSeconds();
+    final progress = _progress(elapsedSec);
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -1181,7 +1215,7 @@ class _DailySummaryCard extends StatelessWidget {
             label: 'Jam Kerja',
             icon: Icons.access_time_rounded,
             color: AppColors.primary,
-            value: _fmt(workMin),
+            value: _fmt(elapsedSec),
             progress: progress,
             isLast: false,
           ),
@@ -1189,16 +1223,9 @@ class _DailySummaryCard extends StatelessWidget {
             label: 'Total Jam Telat',
             icon: Icons.timer_off_rounded,
             color: AppColors.danger,
-            value: _fmt(lateMin),
+            value: _fmtMinutes(lateMin),
             isLast: false,
           ),
-          // const _SummaryRowItem(
-          //   label: 'Keluar Lebih Awal',
-          //   icon: Icons.exit_to_app_rounded,
-          //   color: AppColors.warning,
-          //   value: '0 jam  -  0 menit  -  0 detik',
-          //   isLast: true,
-          // ),
         ],
       ),
     );

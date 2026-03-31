@@ -73,10 +73,10 @@ class _BottomBar extends StatelessWidget {
   const _BottomBar({required this.currentIndex, required this.onTap});
 
   static const _items = [
-    (icon: Icons.home_outlined,           activeIcon: Icons.home_rounded,           label: 'Beranda'),
-    (icon: Icons.fingerprint_outlined,    activeIcon: Icons.fingerprint_rounded,     label: 'Absensi'),
-    (icon: Icons.calendar_today_outlined, activeIcon: Icons.calendar_today_rounded,  label: 'Jadwal'),
-    (icon: Icons.person_outline_rounded,  activeIcon: Icons.person_rounded,          label: 'Akun'),
+    (icon: Icons.home_outlined,              activeIcon: Icons.home_rounded,              label: 'Beranda'),
+    (icon: Icons.notifications_none_rounded, activeIcon: Icons.notifications_rounded,     label: 'Notifikasi'),
+    (icon: Icons.calendar_today_outlined,    activeIcon: Icons.calendar_today_rounded,    label: 'Jadwal'),
+    (icon: Icons.person_outline_rounded,     activeIcon: Icons.person_rounded,            label: 'Akun'),
   ];
 
   @override

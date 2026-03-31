@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/supabase/supabase_client.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../shared/models/zone_model.dart';
@@ -130,19 +129,25 @@ class AttendanceRepository {
     required String type,
     required Uint8List imageBytes,
   }) async {
+    final session = supabase.auth.currentSession;
+    if (session == null) throw Exception('Tidak ada sesi login');
     final today = DateTime.now().toIso8601String().split('T')[0];
     final fileName = 'attendance_${employeeId}_${today}_$type.jpg';
-    await supabase.storage
-        .from('attendance-photos')
-        .uploadBinary(
-          fileName,
-          imageBytes,
-          fileOptions: const FileOptions(
-            contentType: 'image/jpeg',
-            upsert: true,
-          ),
-        );
-    return supabase.storage.from('attendance-photos').getPublicUrl(fileName);
+    final response = await http.post(
+      Uri.parse(
+          '${AppConstants.supabaseUrl}/storage/v1/object/attendance-photos/$fileName'),
+      headers: {
+        'Authorization': 'Bearer ${session.accessToken}',
+        'apikey': AppConstants.supabaseAnonKey,
+        'Content-Type': 'image/jpeg',
+        'x-upsert': 'true',
+      },
+      body: imageBytes,
+    );
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception('Upload foto gagal: ${response.statusCode} - ${response.body}');
+    }
+    return '${AppConstants.supabaseUrl}/storage/v1/object/public/attendance-photos/$fileName';
   }
 
   /// Calculates how many minutes late the employee is.

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../features/splash/splash_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/enroll_face_screen.dart';
 import '../../features/auth/presentation/forgot_password_screen.dart';
@@ -19,11 +20,13 @@ import '../shell/main_shell.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
-    initialLocation: '/home',
+    initialLocation: '/splash',
     redirect: (context, state) async {
       final session = supabase.auth.currentSession;
       final isLoggedIn = session != null;
       final loc = state.matchedLocation;
+
+      if (loc == '/splash') return null;
 
       if (!isLoggedIn) {
         if (loc == '/login' || loc == '/forgot-password') return null;
@@ -46,6 +49,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      // ── Splash ──────────────────────────────────────────────────────
+      GoRoute(path: '/splash', builder: (ctx, s) => const SplashScreen()),
+
       // ── Auth (no shell) ─────────────────────────────────────────────
       GoRoute(path: '/login',           builder: (ctx, s) => const LoginScreen()),
       GoRoute(path: '/forgot-password', builder: (ctx, s) => const ForgotPasswordScreen()),

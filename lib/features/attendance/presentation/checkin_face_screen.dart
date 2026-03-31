@@ -141,7 +141,20 @@ class _CheckinFaceScreenState extends ConsumerState<CheckinFaceScreen> {
     try {
       photoUrl = await repo.uploadAttendancePhoto(
           employeeId: employee.id, type: 'in', imageBytes: bytes);
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Foto tidak tersimpan, absensi tetap tercatat'),
+            backgroundColor: Colors.orange.shade700,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
 
     String? reason;
     if (statusIn == 'late' && mounted) {
