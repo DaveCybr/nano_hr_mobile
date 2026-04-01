@@ -56,6 +56,10 @@ dependencies:
   # Icons
   lucide_icons: ^0.257.0
 
+  # App info & update
+  package_info_plus: ^8.0.0
+  url_launcher: ^6.3.0
+
   # Env
   flutter_dotenv: ^5.1.0
 

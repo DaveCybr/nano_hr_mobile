@@ -8,6 +8,7 @@ import '../../../core/constants/app_colors.dart';
 import '../providers/home_provider.dart';
 import '../../../shared/models/attendance_model.dart';
 import '../../../shared/models/employee_model.dart';
+import '../../update/update_checker.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -17,6 +18,16 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) UpdateChecker.check(context);
+      });
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final employeeAsync = ref.watch(currentEmployeeProvider);
