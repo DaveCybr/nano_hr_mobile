@@ -16,6 +16,6 @@ class AppConstants {
       'https://api-us.faceplusplus.com/facepp/v3';
 
   // App
-  static const String appName = 'nano.HR';
+  static const String appName = 'NanoTime';
   static const String companyName = 'PT Nano Indonesia Sakti';
 }

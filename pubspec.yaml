@@ -1,8 +1,8 @@
 name: nano_hr_mobile
 description: "nano.HR — HR Attendance System for PT Nano Indonesia Sakti"
-publish_to: 'none'
+publish_to: "none"
 
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ^3.9.2
@@ -71,8 +71,20 @@ dev_dependencies:
   riverpod_generator: ^2.4.0
   json_serializable: ^6.7.1
   json_annotation: ^4.9.0
+  flutter_launcher_icons: ^0.14.1
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  adaptive_icon_background: "#1a4438"
+  adaptive_icon_foreground: "assets/icon/app_icon.png"
+  min_sdk_android: 21
+  web:
+    generate: false
 
 flutter:
   uses-material-design: true
   assets:
     - .env
+    - assets/icon/

@@ -15,7 +15,7 @@ class NanoHRApp extends ConsumerWidget {
     final textTheme = GoogleFonts.onestTextTheme();
 
     return MaterialApp.router(
-      title: 'nano.HR',
+      title: 'NanoTime',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,

@@ -117,7 +117,7 @@ class _SplashScreenState extends State<SplashScreen>
 
                           // App name
                           const Text(
-                            'nano.HR',
+                            'NanoTime',
                             style: TextStyle(
                               fontSize: 36,
                               fontWeight: FontWeight.bold,
@@ -136,7 +136,7 @@ class _SplashScreenState extends State<SplashScreen>
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: const Text(
-                              'HR Attendance System',
+                              'Hadir lebih mudah, kerja lebih fokus',
                               style: TextStyle(
                                 fontSize: 13,
                                 color: Colors.white,
