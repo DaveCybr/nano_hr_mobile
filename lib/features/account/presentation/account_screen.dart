@@ -1,8 +1,12 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/supabase/supabase_client.dart';
 import '../../auth/providers/auth_provider.dart' show authRepositoryProvider;
 import '../../home/providers/home_provider.dart';
 import '../../../shared/models/employee_model.dart';
@@ -34,12 +38,84 @@ class AccountScreen extends ConsumerWidget {
 
 // ── Body ─────────────────────────────────────────────────────────────────────
 
-class _Body extends ConsumerWidget {
+class _Body extends ConsumerStatefulWidget {
   final EmployeeModel employee;
   const _Body({required this.employee});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_Body> createState() => _BodyState();
+}
+
+class _BodyState extends ConsumerState<_Body> {
+  bool _uploadingPhoto = false;
+
+  Future<void> _pickAndUploadPhoto() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+      maxWidth: 800,
+    );
+    if (picked == null) return;
+
+    setState(() => _uploadingPhoto = true);
+    try {
+      final Uint8List bytes = await picked.readAsBytes();
+      final session = supabase.auth.currentSession;
+      if (session == null) throw Exception('Tidak ada sesi login');
+
+      final fileName = 'profile_${widget.employee.id}.jpg';
+      final response = await http.post(
+        Uri.parse(
+          '${AppConstants.supabaseUrl}/storage/v1/object/profile-photos/$fileName',
+        ),
+        headers: {
+          'Authorization': 'Bearer ${session.accessToken}',
+          'apikey': AppConstants.supabaseAnonKey,
+          'Content-Type': 'image/jpeg',
+          'x-upsert': 'true',
+        },
+        body: bytes,
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        throw Exception('Upload gagal: ${response.statusCode}');
+      }
+
+      final photoUrl =
+          '${AppConstants.supabaseUrl}/storage/v1/object/public/profile-photos/$fileName';
+      await supabase
+          .from('employees')
+          .update({'profile_photo_url': photoUrl})
+          .eq('id', widget.employee.id);
+
+      ref.invalidate(currentEmployeeProvider);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Foto profil berhasil diperbarui'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal upload foto: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingPhoto = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final employee     = widget.employee;
     final group        = employee.group;
     final position     = employee.position;
     final groupName    = group?['name']    as String? ?? '-';
@@ -49,7 +125,14 @@ class _Body extends ConsumerWidget {
     return CustomScrollView(
       slivers: [
         // ── Hero ──────────────────────────────────────────────────────
-        SliverToBoxAdapter(child: _Hero(employee: employee, roleLabel: roleLabel)),
+        SliverToBoxAdapter(
+          child: _Hero(
+            employee: employee,
+            roleLabel: roleLabel,
+            onEditPhoto: _pickAndUploadPhoto,
+            uploadingPhoto: _uploadingPhoto,
+          ),
+        ),
 
         // ── Info ──────────────────────────────────────────────────────
         SliverToBoxAdapter(
@@ -129,7 +212,7 @@ class _Body extends ConsumerWidget {
                 textColor: AppColors.danger,
                 isLast: true,
                 showChevron: false,
-                onTap: () => _showLogoutDialog(context, ref),
+                onTap: () => _showLogoutDialog(context),
               ),
             ]),
           ),
@@ -171,7 +254,7 @@ class _Body extends ConsumerWidget {
     }
   }
 
-  void _showLogoutDialog(BuildContext context, WidgetRef ref) {
+  void _showLogoutDialog(BuildContext context) {
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
@@ -264,7 +347,14 @@ class _Body extends ConsumerWidget {
 class _Hero extends StatelessWidget {
   final EmployeeModel employee;
   final String roleLabel;
-  const _Hero({required this.employee, required this.roleLabel});
+  final VoidCallback onEditPhoto;
+  final bool uploadingPhoto;
+  const _Hero({
+    required this.employee,
+    required this.roleLabel,
+    required this.onEditPhoto,
+    required this.uploadingPhoto,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -302,45 +392,57 @@ class _Hero extends StatelessWidget {
             child: Column(
               children: [
                 // Avatar
-                Stack(
-                  alignment: Alignment.bottomRight,
-                  children: [
-                    Container(
-                      width: 88, height: 88,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: const Color(0xFFE8F5EE),
-                        border: Border.all(
-                            color: AppColors.primary.withValues(alpha: 0.25),
-                            width: 3),
+                GestureDetector(
+                  onTap: uploadingPhoto ? null : onEditPhoto,
+                  child: Stack(
+                    alignment: Alignment.bottomRight,
+                    children: [
+                      Container(
+                        width: 88, height: 88,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(0xFFE8F5EE),
+                          border: Border.all(
+                              color: AppColors.primary.withValues(alpha: 0.25),
+                              width: 3),
+                        ),
+                        child: ClipOval(
+                          child: uploadingPhoto
+                              ? const Center(
+                                  child: SizedBox(
+                                    width: 28, height: 28,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2.5,
+                                        color: AppColors.primary),
+                                  ),
+                                )
+                              : (employee.profilePhotoUrl ?? employee.facePhotoUrl) != null
+                                  ? Image.network(
+                                      (employee.profilePhotoUrl ?? employee.facePhotoUrl)!,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => const Icon(
+                                          Icons.person_rounded,
+                                          color: AppColors.primary,
+                                          size: 44),
+                                    )
+                                  : const Icon(Icons.person_rounded,
+                                      color: AppColors.primary, size: 44),
+                        ),
                       ),
-                      child: ClipOval(
-                        child: employee.facePhotoUrl != null
-                            ? Image.network(
-                                employee.facePhotoUrl!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const Icon(
-                                    Icons.person_rounded,
-                                    color: AppColors.primary,
-                                    size: 44),
-                              )
-                            : const Icon(Icons.person_rounded,
-                                color: AppColors.primary, size: 44),
+                      Container(
+                        width: 26, height: 26,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.primary,
+                          border: Border.all(
+                              color: AppColors.surfaceContainerLowest,
+                              width: 2),
+                        ),
+                        child: const Icon(Icons.camera_alt_rounded,
+                            color: Colors.white, size: 13),
                       ),
-                    ),
-                    Container(
-                      width: 24, height: 24,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: const Color(0xFF166534),
-                        border: Border.all(
-                            color: AppColors.surfaceContainerLowest,
-                            width: 2),
-                      ),
-                      child: const Icon(Icons.check_rounded,
-                          color: Colors.white, size: 13),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
 
                 const SizedBox(height: 12),

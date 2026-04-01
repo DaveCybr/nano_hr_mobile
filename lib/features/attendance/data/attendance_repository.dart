@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -135,7 +134,8 @@ class AttendanceRepository {
     final fileName = 'attendance_${employeeId}_${today}_$type.jpg';
     final response = await http.post(
       Uri.parse(
-          '${AppConstants.supabaseUrl}/storage/v1/object/attendance-photos/$fileName'),
+        '${AppConstants.supabaseUrl}/storage/v1/object/attendance-photos/$fileName',
+      ),
       headers: {
         'Authorization': 'Bearer ${session.accessToken}',
         'apikey': AppConstants.supabaseAnonKey,
@@ -145,7 +145,9 @@ class AttendanceRepository {
       body: imageBytes,
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception('Upload foto gagal: ${response.statusCode} - ${response.body}');
+      throw Exception(
+        'Upload foto gagal: ${response.statusCode} - ${response.body}',
+      );
     }
     return '${AppConstants.supabaseUrl}/storage/v1/object/public/attendance-photos/$fileName';
   }
@@ -157,7 +159,12 @@ class AttendanceRepository {
     final parts = scheduleIn.split(':');
     final now = DateTime.now();
     final scheduleTime = DateTime(
-        now.year, now.month, now.day, int.parse(parts[0]), int.parse(parts[1]));
+      now.year,
+      now.month,
+      now.day,
+      int.parse(parts[0]),
+      int.parse(parts[1]),
+    );
     final diff = now.difference(scheduleTime).inMinutes;
     return diff > 0 ? diff : 0;
   }

@@ -7,6 +7,7 @@ class EmployeeModel {
   final String? groupId;
   final String? faceToken;
   final String? facePhotoUrl;
+  final String? profilePhotoUrl;
   final String accessType;
   final bool isActive;
   final Map<String, dynamic>? group;
@@ -21,6 +22,7 @@ class EmployeeModel {
     this.groupId,
     this.faceToken,
     this.facePhotoUrl,
+    this.profilePhotoUrl,
     required this.accessType,
     required this.isActive,
     this.group,
@@ -37,6 +39,7 @@ class EmployeeModel {
       groupId: map['group_id'],
       faceToken: map['face_token'],
       facePhotoUrl: map['face_photo_url'],
+      profilePhotoUrl: map['profile_photo_url'],
       accessType: map['access_type'] ?? 'staff',
       isActive: map['is_active'] ?? false,
       group: map['group'] as Map<String, dynamic>?,
