@@ -22,7 +22,7 @@ final _leaveRequestsProvider =
         (ref, employeeId) async {
   final data = await supabase
       .from('leave_requests')
-      .select('*, leave_category:leave_categories(leave_name, leave_type)')
+      .select('*, leave_category:leave_categories(leave_name, leave_type), admin_notes')
       .eq('employee_id', employeeId)
       .isFilter('deleted_at', null)
       .order('created_at', ascending: false);
@@ -278,6 +278,7 @@ class _RequestCard extends StatelessWidget {
     final endDate = DateTime.tryParse(request['end_date'] ?? '');
     final totalDays = request['total_days'] as int? ?? 1;
     final reason = request['reason'] as String?;
+    final adminNotes = request['admin_notes'] as String?;
     final createdAt = DateTime.tryParse(request['created_at'] ?? '');
 
     final dateRange = (startDate != null && endDate != null)
@@ -378,6 +379,31 @@ class _RequestCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                     fontSize: 12, color: AppColors.textMuted)),
+          ],
+          if (status == 'rejected' && adminNotes != null && adminNotes.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.danger.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline_rounded,
+                      size: 13, color: AppColors.danger),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      adminNotes,
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.danger),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
           if (createdAt != null) ...[
             const SizedBox(height: 6),

@@ -19,7 +19,7 @@ final _overtimeRequestsProvider =
         (ref, employeeId) async {
   final data = await supabase
       .from('overtime_requests')
-      .select('*, overtime_category:overtime_categories(name_id, code)')
+      .select('*, overtime_category:overtime_categories(name_id, code), admin_notes')
       .eq('employee_id', employeeId)
       .order('overtime_date', ascending: false);
   return (data as List).cast<Map<String, dynamic>>();
@@ -145,6 +145,7 @@ class _OvertimeCard extends StatelessWidget {
     final endTime = request['end_time'] as String?;
     final totalMin = request['total_minutes'] as int? ?? 0;
     final reason = request['reason'] as String?;
+    final adminNotes = request['admin_notes'] as String?;
     final createdAt = DateTime.tryParse(request['created_at'] ?? '');
 
     Color statusColor;
@@ -266,6 +267,31 @@ class _OvertimeCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                     fontSize: 12, color: AppColors.textMuted)),
+          ],
+          if (status == 'rejected' && adminNotes != null && adminNotes.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.danger.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline_rounded,
+                      size: 13, color: AppColors.danger),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      adminNotes,
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.danger),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
           if (createdAt != null) ...[
             const SizedBox(height: 6),

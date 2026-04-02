@@ -376,9 +376,9 @@ class _Header extends StatelessWidget {
                   ),
                 ),
                 child: ClipOval(
-                  child: employee.facePhotoUrl != null
+                  child: (employee.profilePhotoUrl ?? employee.facePhotoUrl) != null
                       ? Image.network(
-                          employee.facePhotoUrl!,
+                          (employee.profilePhotoUrl ?? employee.facePhotoUrl)!,
                           fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) => const Icon(
                             Icons.person_rounded,

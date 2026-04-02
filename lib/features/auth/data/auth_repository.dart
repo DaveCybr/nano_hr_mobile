@@ -43,14 +43,20 @@ class AuthRepository {
     required String facePhotoUrl,
   }) async {
     final session = supabase.auth.currentSession;
-    if (session == null) return;
+    if (session == null) throw Exception('Sesi tidak ditemukan, silakan login ulang.');
 
-    await supabase
+    final res = await supabase
         .from('employees')
         .update({
           'face_token': faceToken,
           'face_photo_url': facePhotoUrl,
         })
-        .eq('auth_user_id', session.user.id);
+        .eq('auth_user_id', session.user.id)
+        .select('id')
+        .maybeSingle();
+
+    if (res == null) {
+      throw Exception('Data karyawan tidak ditemukan. Hubungi administrator.');
+    }
   }
 }

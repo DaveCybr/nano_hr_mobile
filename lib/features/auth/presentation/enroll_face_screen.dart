@@ -223,6 +223,7 @@ class _EnrollFaceScreenState extends ConsumerState<EnrollFaceScreen> {
       await repo.saveFaceToken(faceToken: faceToken, facePhotoUrl: photoUrl);
 
       if (!mounted) return;
+      setState(() => _processing = false);
       _showSuccessDialog();
     } catch (e) {
       if (mounted) {

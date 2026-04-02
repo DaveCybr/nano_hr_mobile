@@ -41,7 +41,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             .select('face_token')
             .eq('auth_user_id', session.user.id)
             .maybeSingle();
-        final hasFace = emp != null && emp['face_token'] != null;
+
+        // Akun karyawan tidak ditemukan — logout dan kembali ke login
+        if (emp == null) {
+          await supabase.auth.signOut();
+          return '/login';
+        }
+
+        final hasFace = emp['face_token'] != null;
         if (!hasFace) return '/enroll-face';
         if (loc == '/login') return '/home';
       }

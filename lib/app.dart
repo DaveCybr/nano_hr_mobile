@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -37,6 +38,10 @@ class NanoHRApp extends ConsumerWidget {
           elevation: 0,
           centerTitle: false,
           surfaceTintColor: Colors.transparent,
+          systemOverlayStyle: const SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: Brightness.dark,
+          ),
           titleTextStyle: GoogleFonts.onest(
             fontSize: 18,
             fontWeight: FontWeight.bold,
