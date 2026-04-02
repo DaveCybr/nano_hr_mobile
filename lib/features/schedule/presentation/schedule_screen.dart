@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/supabase/supabase_client.dart';
@@ -76,14 +75,14 @@ final _weekScheduleProvider = FutureProvider.family<List<_DaySchedule>,
         final key = dayKeys[day.weekday % 7];
         final workIn = group?['schedule_in_$key'] as String?;
         final workOut = group?['schedule_out_$key'] as String?;
-        final isWeekend =
+        final isWeekendDay =
             day.weekday == DateTime.saturday || day.weekday == DateTime.sunday;
         return _DaySchedule(
           date: day,
           workIn: workIn,
           workOut: workOut,
-          isHoliday: workIn == null && !isWeekend,
-          isWeekend: isWeekend && workIn == null,
+          isHoliday: workIn == null && !isWeekendDay,
+          isWeekend: isWeekendDay && workIn == null,
         );
       }).toList();
     }
@@ -133,10 +132,7 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
-          onPressed: () => context.pop(),
-        ),
+        automaticallyImplyLeading: false,
         title: const Text('Jadwal Kerja'),
       ),
       body: SafeArea(
@@ -245,17 +241,32 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
         const SizedBox(height: 12),
 
         Expanded(
-          child: scheduleAsync.when(
-            loading: () => const Center(
-                child: CircularProgressIndicator(color: AppColors.primary)),
-            error: (e, _) => Center(
-                child: Text('Gagal memuat jadwal: $e',
-                    style: const TextStyle(color: AppColors.danger),
-                    textAlign: TextAlign.center)),
-            data: (days) => ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-              itemCount: days.length,
-              itemBuilder: (_, i) => _DayCard(day: days[i]),
+          child: RefreshIndicator(
+            color: AppColors.primary,
+            onRefresh: () async {
+              ref.invalidate(_weekScheduleProvider(
+                  (employee.id, employee.group, _weekStart)));
+            },
+            child: scheduleAsync.when(
+              loading: () => const Center(
+                  child: CircularProgressIndicator(color: AppColors.primary)),
+              error: (e, _) => ListView(
+                children: [
+                  SizedBox(
+                    height: 300,
+                    child: Center(
+                      child: Text('Gagal memuat jadwal: $e',
+                          style: const TextStyle(color: AppColors.danger),
+                          textAlign: TextAlign.center),
+                    ),
+                  ),
+                ],
+              ),
+              data: (days) => ListView.builder(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                itemCount: days.length,
+                itemBuilder: (_, i) => _DayCard(day: days[i]),
+              ),
             ),
           ),
         ),
