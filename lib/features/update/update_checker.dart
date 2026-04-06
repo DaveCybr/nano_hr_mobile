@@ -1,12 +1,13 @@
+import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/supabase/supabase_client.dart';
 
 class UpdateChecker {
-  /// Checks remote app_versions table. Shows dialog if update available.
-  /// Call this once after home screen loads.
   static Future<void> check(BuildContext context) async {
     try {
       final info = await PackageInfo.fromPlatform();
@@ -18,9 +19,13 @@ class UpdateChecker {
           .eq('is_active', true)
           .maybeSingle();
 
-      if (data == null) return;
+      if (data == null) {
+        debugPrint('[UpdateChecker] no active version found in app_versions');
+        return;
+      }
 
       final remoteCode = (data['version_code'] as num?)?.toInt() ?? 0;
+      debugPrint('[UpdateChecker] localCode=$localCode remoteCode=$remoteCode');
       if (remoteCode <= localCode) return;
 
       if (!context.mounted) return;
@@ -32,8 +37,8 @@ class UpdateChecker {
         releaseNotes: data['release_notes'] as String?,
         isForce: data['is_force_update'] as bool? ?? false,
       );
-    } catch (_) {
-      // Silently ignore — update check is non-critical
+    } catch (e, st) {
+      debugPrint('[UpdateChecker] error: $e\n$st');
     }
   }
 
@@ -57,7 +62,7 @@ class UpdateChecker {
   }
 }
 
-class _UpdateDialog extends StatelessWidget {
+class _UpdateDialog extends StatefulWidget {
   final String versionName;
   final String apkUrl;
   final String? releaseNotes;
@@ -71,9 +76,128 @@ class _UpdateDialog extends StatelessWidget {
   });
 
   @override
+  State<_UpdateDialog> createState() => _UpdateDialogState();
+}
+
+class _UpdateDialogState extends State<_UpdateDialog> {
+  bool _downloading = false;
+  bool _downloaded = false;
+  double _progress = 0;
+  String _statusText = '';
+  String? _savePath;
+  CancelToken? _cancelToken;
+
+  /// Google Drive mengembalikan halaman konfirmasi virus scan untuk file besar.
+  /// Tambahkan confirm=t dan ubah ke usercontent domain agar download langsung.
+  String _resolveGoogleDriveUrl(String url) {
+    if (!url.contains('drive.google.com') && !url.contains('drive.usercontent.google.com')) {
+      return url;
+    }
+
+    // Ekstrak file ID dari berbagai format Google Drive URL
+    String? fileId;
+
+    // Format: /file/d/FILE_ID/
+    final fileMatch = RegExp(r'/file/d/([a-zA-Z0-9_-]+)').firstMatch(url);
+    if (fileMatch != null) fileId = fileMatch.group(1);
+
+    // Format: ?id=FILE_ID atau &id=FILE_ID
+    if (fileId == null) {
+      final idMatch = RegExp(r'[?&]id=([a-zA-Z0-9_-]+)').firstMatch(url);
+      if (idMatch != null) fileId = idMatch.group(1);
+    }
+
+    if (fileId == null) return url;
+
+    return 'https://drive.usercontent.google.com/download?id=$fileId&export=download&confirm=t';
+  }
+
+  Future<void> _downloadAndInstall() async {
+    setState(() {
+      _downloading = true;
+      _progress = 0;
+      _statusText = 'Mempersiapkan download...';
+    });
+
+    try {
+      final dir = await getExternalStorageDirectory();
+      final savePath = '${dir!.path}/downloads/update.apk';
+
+      final file = File(savePath);
+      if (await file.exists()) await file.delete();
+      await file.parent.create(recursive: true);
+
+      _cancelToken = CancelToken();
+
+      setState(() => _statusText = 'Menghubungi server...');
+      final resolvedUrl = _resolveGoogleDriveUrl(widget.apkUrl);
+      debugPrint('[UpdateChecker] resolved url: $resolvedUrl');
+
+      await Dio().download(
+        resolvedUrl,
+        savePath,
+        cancelToken: _cancelToken,
+        options: Options(headers: {'User-Agent': 'Mozilla/5.0'}),
+        onReceiveProgress: (received, total) {
+          if (total > 0) {
+            setState(() {
+              _progress = received / total;
+              final mb = (received / 1024 / 1024).toStringAsFixed(1);
+              final totalMb = (total / 1024 / 1024).toStringAsFixed(1);
+              _statusText = 'Mengunduh $mb / $totalMb MB';
+            });
+          }
+        },
+      );
+
+      // Validasi file adalah APK (magic bytes: PK\x03\x04)
+      final bytes = await file.openRead(0, 4).expand((b) => b).toList();
+      if (bytes.length < 4 || bytes[0] != 0x50 || bytes[1] != 0x4B) {
+        await file.delete();
+        throw Exception('File yang didownload bukan APK valid');
+      }
+
+      if (mounted) {
+        setState(() {
+          _downloading = false;
+          _downloaded = true;
+          _savePath = savePath;
+        });
+      }
+
+      await _openInstaller();
+    } catch (e) {
+      if (e is DioException && CancelToken.isCancel(e)) return;
+      debugPrint('[UpdateChecker] download error: $e');
+      if (mounted) {
+        setState(() {
+          _downloading = false;
+          _statusText = '';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Gagal mengunduh update. Coba lagi.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _openInstaller() async {
+    if (_savePath == null) return;
+    setState(() => _statusText = 'Membuka installer...');
+    await OpenFilex.open(_savePath!);
+    if (mounted) setState(() => _statusText = '');
+  }
+
+  @override
+  void dispose() {
+    _cancelToken?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: !isForce,
+      canPop: !widget.isForce && !_downloading,
       child: Dialog(
         backgroundColor: AppColors.surfaceContainerLowest,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
@@ -101,7 +225,7 @@ class _UpdateDialog extends StatelessWidget {
 
               // Title
               Text(
-                isForce ? 'Update Wajib' : 'Update Tersedia',
+                widget.isForce ? 'Update Wajib' : 'Update Tersedia',
                 style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
@@ -111,7 +235,7 @@ class _UpdateDialog extends StatelessWidget {
               const SizedBox(height: 6),
 
               Text(
-                'Versi $versionName telah tersedia.',
+                'Versi ${widget.versionName} telah tersedia.',
                 style: const TextStyle(
                   fontSize: 13,
                   color: AppColors.textSecondary,
@@ -120,7 +244,7 @@ class _UpdateDialog extends StatelessWidget {
               ),
 
               // Release notes
-              if (releaseNotes != null && releaseNotes!.isNotEmpty) ...[
+              if (widget.releaseNotes != null && widget.releaseNotes!.isNotEmpty) ...[
                 const SizedBox(height: 14),
                 Container(
                   width: double.infinity,
@@ -143,7 +267,7 @@ class _UpdateDialog extends StatelessWidget {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        releaseNotes!,
+                        widget.releaseNotes!,
                         style: const TextStyle(
                           fontSize: 13,
                           color: AppColors.textSecondary,
@@ -155,7 +279,7 @@ class _UpdateDialog extends StatelessWidget {
                 ),
               ],
 
-              if (isForce) ...[
+              if (widget.isForce) ...[
                 const SizedBox(height: 10),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -180,52 +304,117 @@ class _UpdateDialog extends StatelessWidget {
 
               const SizedBox(height: 24),
 
-              // Buttons
-              Column(
-                children: [
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        final uri = Uri.parse(apkUrl);
-                        if (await canLaunchUrl(uri)) {
-                          await launchUrl(uri, mode: LaunchMode.externalApplication);
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: const StadiumBorder(),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                      ),
-                      child: const Text(
-                        'Update Sekarang',
-                        style: TextStyle(fontWeight: FontWeight.w600),
+              // Download progress
+              if (_downloading) ...[
+                Column(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: LinearProgressIndicator(
+                        value: _progress > 0 ? _progress : null,
+                        minHeight: 8,
+                        backgroundColor: AppColors.surfaceContainerLow,
+                        valueColor: const AlwaysStoppedAnimation(AppColors.primary),
                       ),
                     ),
-                  ),
-                  if (!isForce) ...[
                     const SizedBox(height: 10),
+                    Text(
+                      _statusText,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    if (_progress > 0) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '${(_progress * 100).toStringAsFixed(0)}%',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ] else if (_downloaded) ...[
+                // APK sudah didownload, tinggal install
+                Column(
+                  children: [
+                    const Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 32),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Download selesai!',
+                      style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                    ),
+                    if (_statusText.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(_statusText, style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                    ],
+                    const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.textSecondary,
-                          side: const BorderSide(color: AppColors.surfaceContainerHigh),
+                      child: ElevatedButton(
+                        onPressed: _openInstaller,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
                           shape: const StadiumBorder(),
                           padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
                         child: const Text(
-                          'Nanti Saja',
-                          style: TextStyle(fontWeight: FontWeight.w500),
+                          'Install Sekarang',
+                          style: TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ),
                     ),
                   ],
-                ],
-              ),
+                ),
+              ] else ...[
+                // Buttons
+                Column(
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: _downloadAndInstall,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: const StadiumBorder(),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: const Text(
+                          'Update Sekarang',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
+                    if (!widget.isForce) ...[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.textSecondary,
+                            side: const BorderSide(color: AppColors.surfaceContainerHigh),
+                            shape: const StadiumBorder(),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          child: const Text(
+                            'Nanti Saja',
+                            style: TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
             ],
           ),
         ),
