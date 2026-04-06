@@ -39,13 +39,13 @@ class _EnrollFaceScreenState extends ConsumerState<EnrollFaceScreen> {
     if (session == null) return;
     final data = await supabase
         .from('employees')
-        .select('face_token')
+        .select('face_photo_url')
         .eq('auth_user_id', session.user.id)
         .maybeSingle();
-    final token = data?['face_token'] as String?;
-    if (token != null && mounted) {
+    final photoUrl = data?['face_photo_url'] as String?;
+    if (photoUrl != null && mounted) {
       setState(() {
-        _existingFaceToken = token;
+        _existingFaceToken = photoUrl;
         _step = _EnrollStep.verify;
       });
     }
@@ -87,37 +87,24 @@ class _EnrollFaceScreenState extends ConsumerState<EnrollFaceScreen> {
       final imageBytes = await File(photo.path).readAsBytes();
       final base64Image = base64Encode(imageBytes);
 
-      // Detect face
-      final detectRes = await http.post(
-        Uri.parse('${AppConstants.faceppBaseUrl}/detect'),
-        body: {
-          'api_key': AppConstants.faceppApiKey,
-          'api_secret': AppConstants.faceppApiSecret,
-          'image_base64': base64Image,
-          'return_attributes': 'none',
-        },
-      );
-      final detectData = jsonDecode(detectRes.body) as Map<String, dynamic>;
-      final faces = detectData['faces'] as List?;
-      if (faces == null || faces.isEmpty) {
-        setState(() {
-          _error = 'Wajah tidak terdeteksi. Pastikan pencahayaan cukup.';
-          _processing = false;
-        });
-        return;
-      }
-
-      // Compare with stored face token
+      // Compare langsung dengan foto yang tersimpan (image_url vs image_base64)
       final compareRes = await http.post(
         Uri.parse('${AppConstants.faceppBaseUrl}/compare'),
         body: {
           'api_key': AppConstants.faceppApiKey,
           'api_secret': AppConstants.faceppApiSecret,
-          'face_token1': _existingFaceToken!,
-          'face_token2': faces[0]['face_token'] as String,
+          'image_url1': _existingFaceToken!,
+          'image_base64_2': base64Image,
         },
       );
       final compareData = jsonDecode(compareRes.body) as Map<String, dynamic>;
+      if (compareData['error_message'] != null) {
+        setState(() {
+          _error = 'Verifikasi gagal: ${compareData['error_message']}';
+          _processing = false;
+        });
+        return;
+      }
       final confidence = (compareData['confidence'] as num?)?.toDouble() ?? 0.0;
 
       if (confidence < 76.5) {

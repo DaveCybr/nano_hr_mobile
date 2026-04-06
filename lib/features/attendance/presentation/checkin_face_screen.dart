@@ -80,7 +80,7 @@ class _CheckinFaceScreenState extends ConsumerState<CheckinFaceScreen> {
       final base64Image = base64Encode(bytes);
       final employee = await ref.read(currentEmployeeProvider.future);
 
-      if (employee == null || employee.faceToken == null) {
+      if (employee == null || employee.facePhotoUrl == null) {
         setState(() {
           _processing = false;
           _resultMessage = 'Data wajah tidak ditemukan. Silakan enroll ulang.';
@@ -92,7 +92,7 @@ class _CheckinFaceScreenState extends ConsumerState<CheckinFaceScreen> {
       final repo = AttendanceRepository();
       final result = await repo.verifyFace(
         base64Image: base64Image,
-        storedFaceToken: employee.faceToken!,
+        storedFacePhotoUrl: employee.facePhotoUrl!,
       );
 
       final isVerified = result['verified'] as bool? ?? false;

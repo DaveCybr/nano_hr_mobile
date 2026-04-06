@@ -49,42 +49,37 @@ class AttendanceRepository {
 
   Future<Map<String, dynamic>> verifyFace({
     required String base64Image,
-    required String storedFaceToken,
+    required String storedFacePhotoUrl,
   }) async {
-    final detectRes = await http.post(
-      Uri.parse('${AppConstants.faceppBaseUrl}/detect'),
-      body: {
-        'api_key': AppConstants.faceppApiKey,
-        'api_secret': AppConstants.faceppApiSecret,
-        'image_base64': base64Image,
-        'return_attributes': 'none',
-      },
-    );
-    final detectData = jsonDecode(detectRes.body);
-    final faces = detectData['faces'] as List?;
-    if (faces == null || faces.isEmpty) {
-      return {
-        'verified': false,
-        'confidence': 0.0,
-        'error': 'Wajah tidak terdeteksi',
-      };
-    }
-    final newFaceToken = faces[0]['face_token'];
     final compareRes = await http.post(
       Uri.parse('${AppConstants.faceppBaseUrl}/compare'),
       body: {
         'api_key': AppConstants.faceppApiKey,
         'api_secret': AppConstants.faceppApiSecret,
-        'face_token1': storedFaceToken,
-        'face_token2': newFaceToken,
+        'image_url1': storedFacePhotoUrl,
+        'image_base64_2': base64Image,
       },
     );
     final compareData = jsonDecode(compareRes.body);
+    if (compareData['error_message'] != null) {
+      final msg = compareData['error_message'] as String;
+      if (msg.contains('INVALID_IMAGE') || msg.contains('NO_FACE_FOUND')) {
+        return {
+          'verified': false,
+          'confidence': 0.0,
+          'error': 'Wajah tidak terdeteksi. Pastikan pencahayaan cukup.',
+        };
+      }
+      return {
+        'verified': false,
+        'confidence': 0.0,
+        'error': 'Verifikasi gagal: $msg',
+      };
+    }
     final confidence = (compareData['confidence'] as num?)?.toDouble() ?? 0.0;
     return {
       'verified': confidence >= 76.5,
       'confidence': confidence,
-      'face_token': newFaceToken,
     };
   }
 

@@ -2,7 +2,7 @@ name: nano_hr_mobile
 description: "nano.HR — HR Attendance System for PT Nano Indonesia Sakti"
 publish_to: "none"
 
-version: 1.0.1+2
+version: 1.1.0+3
 
 environment:
   sdk: ^3.9.2
